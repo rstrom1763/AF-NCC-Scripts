@@ -1,4 +1,4 @@
-cls
+﻿cls
 
 Connection-Test
 
@@ -96,3 +96,5 @@ foreach ($computer in $computers){
 }
 
 Write-Host "`n$count Computers Failed"
+
+#A1C Strom

@@ -1,4 +1,4 @@
-function Compare-Lists {
+﻿function Compare-Lists {
     
     Param([Parameter(Mandatory=$True)][String]$list1,[String]$list2)
 
@@ -20,3 +20,6 @@ function Compare-Lists {
     }
 
 }
+
+
+#A1C Strom
