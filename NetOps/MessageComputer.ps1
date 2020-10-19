@@ -8,4 +8,3 @@ function Message-Computer {
 
 }
 
-#A1C Strom
