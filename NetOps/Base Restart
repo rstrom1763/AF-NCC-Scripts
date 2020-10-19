@@ -1,0 +1,31 @@
+cls 
+
+Connection-Test
+
+$Test = Get-Content -path "C:\Wright\RequiresPush.txt"
+$Message = 'Your computer will be automatically restarted in 10 minutes. Please, save your work.'
+
+Function Message-Computer {
+
+    Param([Parameter(Mandatory=$False)][String]$Computer,[String]$Message)
+
+    Invoke-WmiMethod -Class Win32_Process -ComputerName $computer -Name Create -ArgumentList "C:\Windows\System32\msg.exe * $message"
+
+}
+Function Restart-Computers {
+
+    Start-Sleep -Seconds 600
+    Restart-Computer -Force
+
+}
+foreach($PC in $Test) {
+
+    Message-Computer -Computer $PC -Message $Message 
+
+}
+
+foreach($PC in $Test) {
+
+   Invoke-Command -ComputerName $PC ${Function:Restart-Computers} -AsJob
+
+}
