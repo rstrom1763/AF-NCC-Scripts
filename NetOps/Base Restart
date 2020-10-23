@@ -20,7 +20,7 @@ Function Restart-Computers { #Function to be encapsulated into a job to be sent 
     #Message contains the message that will be presented to the user
     $message = "This computer is scheduled to restart in approximately 10 minutes. Please save your work and have a wonderful day!"
     Message-Popup -Message $message #Creates the pop-up
-    Start-Sleep -Seconds 60 #The number controls the number of seconds to wait before the computer will restart
+    Start-Sleep -Seconds 600 #The number controls the number of seconds to wait before the computer will restart
     Restart-Computer -Force #Force restarts the computer
 
 }
