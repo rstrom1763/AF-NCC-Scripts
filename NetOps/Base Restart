@@ -29,3 +29,10 @@ foreach($PC in $Test) {
    Invoke-Command -ComputerName $PC ${Function:Restart-Computers} -AsJob
 
 }
+
+_________________________________________________________________________________
+
+Get-RDUserSession
+
+Send-RDUserMessage -MessageTitle "Message from Comm" -MessageBody "Test"
+
