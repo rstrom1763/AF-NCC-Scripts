@@ -3,24 +3,12 @@ cls
 Connection-Test
 
 $Test = Get-Content -path "C:\Wright\RequiresPush.txt"
-$Message = 'Your computer will be automatically restarted in 10 minutes. Please, save your work.'
 
-Function Message-Computer {
-
-    Param([Parameter(Mandatory=$False)][String]$Computer,[String]$Message)
-
-    Invoke-WmiMethod -Class Win32_Process -ComputerName $computer -Name Create -ArgumentList "C:\Windows\System32\msg.exe * $message"
-
-}
 Function Restart-Computers {
 
+    [System.Windows.MessageBox]::Show('This computer is sheduled to restart in approximately 10 minutes. Please save your work and have a wonderful day!','Scheduled Computer Restart')
     Start-Sleep -Seconds 600
     Restart-Computer -Force
-
-}
-foreach($PC in $Test) {
-
-    Message-Computer -Computer $PC -Message $Message 
 
 }
 
@@ -29,10 +17,3 @@ foreach($PC in $Test) {
    Invoke-Command -ComputerName $PC ${Function:Restart-Computers} -AsJob
 
 }
-
-_________________________________________________________________________________
-
-Get-RDUserSession
-
-Send-RDUserMessage -MessageTitle "Message from Comm" -MessageBody "Test"
-
