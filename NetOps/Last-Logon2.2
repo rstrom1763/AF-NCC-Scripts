@@ -1,12 +1,16 @@
 cls
 
+Import-Module -Name poshrsjob
+
 Connection-Test
+
 
 $savePath = "C:\Strom\UserSeshs.csv"
 $failureSavePath = "C:\Strom\UserSeshFails.txt"
 $computers = Get-Content "C:\Strom\Results.txt"
 $tempFilePath = "C:/temp.csv"
 $tempSpace = "C://temp/tempspace"
+$jobLimit = 700
 
 cd $tempSpace;Remove-Item *
 
@@ -310,26 +314,22 @@ foreach($pc in $computers){
         
     }
 }
-
+Write-Host testing1
 Wait-Job * -Timeout 120
 
-$jobs = Get-Job
 $count = 0
+$jobs = Get-Job
+$jobs | where { $_.State -eq "Completed" -or $_.State -eq "Failed" } | Remove-Job
+$jobCount = $jobs | Measure-Object
+$jobCount = $jobCount.Count
 
-foreach ($job in $jobs){
-
-    if($job.("State") -eq "Failed"){
-
-        Remove-Job ($job.("Id"))
-
-    }
-
-}
+$jobCount + $jobLimit
+Write-Host Testing2
 
 foreach ($computer in $computers){
-    
-    
-    Start-Job -ArgumentList $computer,$savePath,$failureSavePath,$computers,$tempFilePath,$tempSpace -ScriptBlock{
+   
+
+    Start-rsjob -Throttle ($jobCount + $jobLimit) -ArgumentList $computer,$savePath,$failureSavePath,$computers,$tempFilePath,$tempSpace -ScriptBlock{
         
         $computer = $args[0]
         $savePath = $args[1]
@@ -345,7 +345,7 @@ foreach ($computer in $computers){
                 Export-Csv -Path "$tempSpace/$computer.csv" -Append -NoClobber -NoTypeInformation
                 rm $filePath
                 Write-Host $computer
-
+             
             }
 
         Catch {
@@ -358,7 +358,7 @@ foreach ($computer in $computers){
     }
 }
 
-Wait-Job * -Timeout 240
+Wait-RSJob * -Timeout 240
 
 cd $tempSpace
 $files = Get-ChildItem -Path $tempSpace 
