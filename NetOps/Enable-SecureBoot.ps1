@@ -2,14 +2,12 @@
 Function Enable-SecureBoot {
 
 Param([Parameter(Mandatory=$True)]$Computer,[ValidateSet($True,$False)]$restart),
-[String]$Message,
-[Int]$delayAfterMessage
+[String]$Message
 
 
 
 
 Connection-Test #Depends on additional scripts "Connection-Test", and "Invoke-Ping"
-#$computers = Get-Content "C:\strom\results.txt" 
 
 $scriptblock = {
      
@@ -789,7 +787,7 @@ Function Message-Popup{ #Function that handles creating the message pop-up for t
     $make = Get-CimInstance -ClassName Win32_ComputerSystem | Select-Object Manufacturer
     $make = $make.Manufacturer.ToLower()
     
-    Message-Popup -Message "In support of MTO 2020-314-001, Enforcement of UEFI and Secure Boot in Support of SDC v10.1909, your machine will be rebooted in 5 minutes in order to save BIOS configuration."
+    Message-Popup -Message $Message
     Start-Sleep -Seconds 10
 
     if($make -eq "lenovo"){
