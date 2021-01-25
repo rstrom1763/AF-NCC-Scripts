@@ -1,39 +1,19 @@
+
+Function Enable-SecureBoot {
+
+Param([Parameter(Mandatory=$True)]$Computer,[ValidateSet($True,$False)]$restart),
+[String]$Message,
+[Int]$delayAfterMessage
+
+
+
+
 Connection-Test #Depends on additional scripts "Connection-Test", and "Invoke-Ping"
-
-$computers = Get-Content "INSERT FILE PATH HERE" 
-#Insert path to text file containing all of the computers to be targeted. 
-$notDone = "INSERT FILE PATH HERE"
-#Path to text file to append computer names that threw an error
-$requiresReboot = "INSERT FILE PATH HERE"
-#Computers that were succesful and needing to be rebooted. 
-
-if((Test-Path $notDone) -eq $true){
-
-    Clear-Item $notDone
-
-}
-
-if((Test-Path $requiresReboot) -eq $true){
-
-    Clear-Item $requiresReboot
-
-}
-
-if((Test-Path $notDone) -eq $false){
-
-    New-Item $notDone
-
-}
-
-if((Test-Path $requiresReboot) -eq $false){
-
-    New-Item $requiresReboot
-
-}
+#$computers = Get-Content "C:\strom\results.txt" 
 
 $scriptblock = {
      
-    Function Bios-config-Lenovo {
+Function Bios-config-Lenovo {
 
 <#
 .SYNOPSIS
@@ -732,14 +712,9 @@ else {
 
 }
 
-    Function HP-secure-boot{    
+Function HP-secure-boot{    
 [CmdletBinding()]
-param (
 
-    [Parameter(Mandatory)]
-    [string[]]
-    $ComputerName
-)
 
 # Scriptblock for Invoke-Command
 $InvokeCommandScriptBlock = {
@@ -794,50 +769,49 @@ $InvokeCommandScriptBlock = {
 # Parameters for Invoke-Command
 $InvokeCommandParams = @{
 
-    ComputerName = $ComputerName
     ScriptBlock = $InvokeCommandScriptBlock
     ErrorAction = $ErrorActionPreference
+
 }
 
 Invoke-Command @InvokeCommandParams 
 }
 
+Function Message-Popup{ #Function that handles creating the message pop-up for the user. 
 
-    
+        #The parameter Message is required. It is the message to be presented in the pop-up
+        Param([Parameter(Mandatory=$True)][String]$Message)
+        Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList "C:\Windows\System32\msg.exe * $message"
+
+    }
+
+
     $make = Get-CimInstance -ClassName Win32_ComputerSystem | Select-Object Manufacturer
+    $make = $make.Manufacturer.ToLower()
     
-    if($make -eq "Lenovo"){
+    Message-Popup -Message "In support of MTO 2020-314-001, Enforcement of UEFI and Secure Boot in Support of SDC v10.1909, your machine will be rebooted in 5 minutes in order to save BIOS configuration."
+    Start-Sleep -Seconds 10
 
-        Bios-config-Lenovo -SupervisorPass password -EnableSecureBoot
+    if($make -eq "lenovo"){
+
+        Bios-config-Lenovo -EnableSecureBoot -SupervisorPass password -Restart
     
     }
 
-    if($make -eq "HP" -or $make -eq "Hewlett-Packard"){
+    if($make -eq "hp" -or $make -eq "hewlett-packard"){
         
-        HP-secure-boot -ComputerName $env:COMPUTERNAME
+        HP-secure-boot
+        Restart-Computer -Force
         
     }
 
 }
 
 foreach ($pc in $computers){
+ 
+    Write-Host $pc
+    Invoke-Command -ComputerName $pc -ScriptBlock $scriptblock -AsJob
 
-    $success = $true
-    try{
+}
 
-        Invoke-Command -ComputerName $pc -ScriptBlock $scriptblock
-
-    }
-    catch{
-    
-        Add-Content -Path $notDone -Value $pc
-        $success = $false
-
-    }
-
-    if($success){
-    
-        Add-Content -Path $requiresReboot -Value $pc
-    
-    }
 }
