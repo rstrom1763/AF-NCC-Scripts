@@ -1,6 +1,6 @@
 ﻿#Speaks a message using the Microsoft speech synthesizer
 
-Function Power-Speak {
+Function Computer-Speak {
 
     Param([Parameter(Mandatory=$True)][String]$message)
 
