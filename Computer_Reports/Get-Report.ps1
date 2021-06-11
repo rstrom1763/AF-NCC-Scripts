@@ -1,40 +1,51 @@
 Function Get-Report {
 
     param(
-        [Parameter(Mandatory = $true)][String]$jsonDir,
-        [Parameter(Mandatory = $true)][String]$exportCSV,
-        [String]$adCacheFile,
-        [Parameter(Mandatory=$True)][String]$base
+        [Parameter(Mandatory = $true)][String]$JsonDir,
+        [Parameter(Mandatory = $true)][String]$ExportCSV,
+        [String]$ADCacheFile,
+        [Parameter(Mandatory = $True)][String]$Base,
+        [Parameter(Mandatory = $True)][String]$UsersOU,
+        [Parameter(Mandatory = $True)][String]$ComputersOU
     )
     
-    $domain = Get-ADOrganizationalUnit -filter * | Where-Object { $_.distinguishedname -like "*user*" -and $_.distinguishedname -notcontains "*fn*" } | Select-String $base | select-string "afb users"
-    if (Test-Path "C:/adCache.csv") { $defaultADCacheFile = Get-Item "C:/adCache.csv" } else { $defaultADCacheFile = "C:/adCache.csv" }
-    $timespan = New-TimeSpan -Days 14
+    [string]$date = Get-Date -Format "MM-dd-yyy HH-mm"
+    $ExportCSV = $ExportCSV.Insert(($ExportCSV.Length-4),$date)
 
-    Get-ChildItem $jsonDir | Get-Content | ConvertFrom-Json | Select-Object ComputerName, IP, Username, LogonTime, SDC, Make, Model, BIOS, SecureBoot | Export-Csv $exportCSV -NoTypeInformation
+    if (Test-Path "C:/adCache.csv") { $defaultADCacheFile = Get-Item "C:/adCache.csv" } else { $defaultADCacheFile = "C:/adCache.csv" }
+    $timespan = New-TimeSpan -Days 7
+
+    Get-ChildItem $jsonDir | Get-Content | ConvertFrom-Json | Export-Csv $exportCSV -NoTypeInformation
 
     if ($adCacheFile -eq "") {
-        if (Test-Path $defaultADCacheFile -and ($defaultADCacheFile.LastWriteTime -lt $timespan)) {
+        if ((Test-Path $defaultADCacheFile) -and (((Get-Date) - $defaultADCacheFile.LastWriteTime) -lt $timespan)) {
             $users = Import-Csv $defaultADCacheFile
         }
         else {
-            Get-ADUser -SearchBase $domain -Filter '*' -Properties * | Export-Csv $defaultADCacheFile
-            $users = Import-Csv $adCacheFile
+            Get-ADUser -SearchBase $usersOU -Filter '*' -Properties * | Export-Csv $defaultADCacheFile
+            $users = Import-Csv $defaultADCacheFile
         }
     }
-    elseif (!$adCacheFile -eq "") {
+    elseif (!($adCacheFile -eq "")) {
         if ((Test-Path $adCacheFile) -and ($defaultADCacheFile.LastWriteTime -lt $timespan)) {
             $users = Import-Csv $adCacheFile
         }
         else {
-            Get-ADUser -SearchBase $domain -Filter '*' -Properties * | Export-Csv $adCacheFile
+            Write-Host "Fetching user data from user AD OU..."
+            Get-ADUser -SearchBase $usersOU -Filter '*' -Properties * | Export-Csv $adCacheFile
             $users = Import-Csv $adCacheFile
         }
     }
     
     $data = Import-Csv $exportCSV
 
+    $totalCount = ($data | Measure-Object).Count
+    $count = 1
+
     foreach ($entry in $data) {
+
+        [int]$complete = ($count / $totalCount) * 100
+        Write-Progress -Activity "Cross Referencing with AD" -Status "Status: $complete%" -PercentComplete $complete
 
         if ($entry.Username -NotLike "*No user sessions*") {
 
@@ -44,46 +55,22 @@ Function Get-Report {
 
         foreach ( $user in $users ) {
 
-        
-            if ($user.gigID -NotLike "*No user sessions*") {
+            $user.gigID = $user.gigID -replace "[^0-9]"
 
-                $user.gigID = $user.gigID -replace "[^0-9]"
-
-            }
-
-            try {
-            
-                if ($entry.Username -eq $user.gigID) {
+            if ($entry.Username -eq $user.gigID) {
                 
-                    Add-Member -InputObject $data[($data.indexof($entry))] -Name "User" -Value $user.DisplayName -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data[($data.indexof($entry))] -Name "Organization" -Value $user.Organization -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data[($data.indexof($entry))] -Name "Office" -Value $user.Office -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data[($data.indexof($entry))] -Name "Phone" -Value $user.OfficePhone -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data[($data.indexof($entry))] -Name "Email" -Value $user.mail -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data[($data.indexof($entry))] -Name "personalTitle" -Value $user.personalTitle -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data[($data.indexof($entry))] -Name "Title" -Value $user.Title -MemberType NoteProperty -ErrorAction SilentlyContinue
-
-                }
-
-            }
-            Catch {
-
-                if ($entry.Username -eq $user.gigID) {
-                    
-                    Add-Member -InputObject $data -Name "User" -Value $user.DisplayName -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data -Name "Organization" -Value $user.Organization -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data -Name "Office" -Value $user.Office -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data -Name "Phone" -Value $user.OfficePhone -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data -Name "Email" -Value $user.mail -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data -Name "personalTitle" -Value $user.personalTitle -MemberType NoteProperty -ErrorAction SilentlyContinue
-                    Add-Member -InputObject $data -Name "Title" -Value $user.Title -MemberType NoteProperty -ErrorAction SilentlyContinue
-        
-                }
+                Add-Member -InputObject $data[($data.indexof($entry))] -Name "User" -Value $user.DisplayName -MemberType NoteProperty -ErrorAction SilentlyContinue
+                Add-Member -InputObject $data[($data.indexof($entry))] -Name "Organization" -Value $user.Organization -MemberType NoteProperty -ErrorAction SilentlyContinue
+                Add-Member -InputObject $data[($data.indexof($entry))] -Name "Office" -Value $user.Office -MemberType NoteProperty -ErrorAction SilentlyContinue
+                Add-Member -InputObject $data[($data.indexof($entry))] -Name "Phone" -Value $user.OfficePhone -MemberType NoteProperty -ErrorAction SilentlyContinue
+                Add-Member -InputObject $data[($data.indexof($entry))] -Name "Email" -Value $user.mail -MemberType NoteProperty -ErrorAction SilentlyContinue
+                Add-Member -InputObject $data[($data.indexof($entry))] -Name "personalTitle" -Value $user.personalTitle -MemberType NoteProperty -ErrorAction SilentlyContinue
+                Add-Member -InputObject $data[($data.indexof($entry))] -Name "Title" -Value $user.Title -MemberType NoteProperty -ErrorAction SilentlyContinue
 
             }
 
         }
-
+        $count++
     }
 
     $data | Export-Csv $exportCSV -NoTypeInformation
