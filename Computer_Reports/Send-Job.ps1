@@ -4,8 +4,8 @@ Function Send-Job {
 
     Param(
 
-        [Parameter(Mandatory = $True)]$computers, #text file with the computer names on individual lines. 
-        [Parameter(Mandatory = $True)]$outputURI
+        [Parameter(Mandatory = $True)]$Computers, #text file with the computer names on individual lines. 
+        [Parameter(Mandatory = $True)]$outputURI  #Url of the machine running the Nodejs application Ex: http://computername:8081/write
 
     )
 
@@ -13,9 +13,7 @@ Function Send-Job {
         return (Write-Error "$computers does not exist. ")
     }
 
-    Connection-Test -computers $computers -outfile "C:/temp/results.txt" #Relies on Invoke-Ping
-
-    $computers = Get-Content "C:/temp/results.txt"
+    $computers = Get-Content $computers | Invoke-Ping -Quiet #Relies on Invoke-Ping
     
     Remove-Job -State Stopped, Failed
 
@@ -23,7 +21,7 @@ Function Send-Job {
         
         param(
             $outputURI
-            )
+        )
 
         function Get-UserSession {
             <#  
@@ -376,52 +374,27 @@ Function Send-Job {
             [FirmwareType]::GetFirmwareType()
         }
 
+        $data = Get-UserSession | Where-Object { $_.State -like "*Active*" }
+
+        $data.LogonTime = $data.LogonTime.ToString()
+
         $SDC = reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OEMInformation\ /v Model | 
         Select-String Model
         $SDC = $SDC -replace "Model    REG_SZ", ""
         $SDC = $SDC -replace "NIPRNet", ""
         $SDC = $SDC.Trim()
-
-        $data = $null
-    
-        $count = 0
-        while ($data.State -ne "Active" -and $count -le 10) {
-
-            $data = Get-UserSession | Where-Object { $_.State -like "*Active*" }
-            if ($data.State -ne "Active") { Start-Sleep 1; $count += 1 }
-
-        }
-
-        $data.LogonTime = $data.LogonTime.ToString()
-
         Add-Member -InputObject $data -Name "SDC" -Value $SDC -MemberType NoteProperty
-    
-        $make = Get-CimInstance -ClassName Win32_ComputerSystem | Select-Object Manufacturer
 
+        $make = Get-CimInstance -ClassName Win32_ComputerSystem | Select-Object Manufacturer
         $make = $make.Manufacturer
-        $make = $make -replace "Hewlett-Packard", "HP"
-        $make = $make -replace "Panasonic Corporation", "Panasonic"
-        $make = $make -replace "Gigabyte Technology Co., Ltd.", "Gigabyte"
-        $make = $make -replace "Microsoft Corporation", "Microsoft"
-        $make = $make -replace "Ace Computers", "Ace"
-        $make = $make -replace "Dell Inc.", "Dell"
-    
         Add-Member -InputObject $data -Name "Make" -Value $make -MemberType NoteProperty
-        $make = $make.Manufacturer.ToLower()
+        $make = $make.ToLower()
     
         if ($make -eq "lenovo") { $model = wmic csproduct get version }
         else { $model = (Get-WmiObject -Class:Win32_ComputerSystem).Model }
         $model = $model -join " "
         $model = $model -replace "Version", ""
         $model = $model.Trim()
-        $model = $model -replace "A3009DD10303", "HP ProBook 650 G1"
-        $model = $model -replace "Ace LogiCAD 45525 Performance Desktop System", "Ace LogiCAD"
-        $model = $model -replace "Mobile Workstation", ""
-        $model = $model -replace "QEB2020A", ""
-        $model = $model -replace "QEB19B", ""
-        $model = $model -replace "QEB18B", ""
-        $model = $model -replace "NOTEBOOK PC", ""
-        $model = $model -replace "2-in-1 QEB 2020B", ""
         Add-Member -InputObject $data -Name "Model" -Value $model -MemberType NoteProperty
 
         $ip = Test-Connection -ComputerName (hostname) -Count 1  | Select-Object IPV4Address
@@ -440,18 +413,25 @@ Function Send-Job {
         else { $secureBoot = "Other" }
         Add-Member -InputObject $data -Name "SecureBoot" -Value $secureBoot -MemberType NoteProperty
 
+        Add-Member -InputObject $data -Name "EntryDate" -Value ((Get-Date).ToString()) -MemberType NoteProperty
 
-        $data | ConvertTo-Json | Invoke-WebRequest -Uri $outputURI -Method Post -ContentType 'application/json'
- 
+        Add-Member -InputObject $data -Name "LastReboot" -Value (Get-CimInstance -ClassName win32_operatingsystem | 
+            Select-Object csname, lastbootuptime).lastbootuptime.tostring() -MemberType NoteProperty
+
+        $data = $data | Select-Object -Property * -ExcludeProperty state, idletime, id, sessionname |  ConvertTo-Json
+
+        Invoke-WebRequest -Uri $outputURI -Body $data -Method Post -ContentType 'application/json' -UseBasicParsing
+
     }
-    
-    Write-Host "Sending out job to computers`n"
 
+    $totalCount = ($computers | Measure-Object).Count
+    $count = 0
 
     foreach ($pc in $computers) {
 
         try {
 
+            Start-Sleep -Milliseconds 10
             Invoke-Command -ComputerName $pc -ScriptBlock $scriptblock -ArgumentList $outputURI -AsJob > $null
 
         }
@@ -460,8 +440,13 @@ Function Send-Job {
             Write-Host "Failed: "$_
         
         }
+
+        $count++
+        [int]$percentComplete = ($count / $totalCount) * 100
+        Write-Progress -Activity "Sending Jobs: " -Status "Status: $percentComplete% " -PercentComplete $percentComplete
+
     }
 
-    Write-Host "Job Distribution Complete!"
+    Write-Host "Job Distribution Complete! "
 
 }
