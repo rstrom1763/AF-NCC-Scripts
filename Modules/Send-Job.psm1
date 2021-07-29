@@ -403,9 +403,6 @@ Function Send-Job {
         $ip = Test-Connection -ComputerName (hostname) -Count 1  | Select-Object IPV4Address
         Add-Member -InputObject $data -Name "IP" -Value $ip.IPV4Address.ToString() -MemberType NoteProperty
 
-        $mac = (Get-NetAdapter | Where-Object {$_.Status -eq "Up"}).MacAddress
-        Add-Member -InputObject $data -Name "MAC" -Value $mac -MemberType NoteProperty
-
         $bios = Get-BiosType
         if ($bios -eq 1) { $bios = "Legacy BIOS" }
         elseif ($bios -eq 2) { $bios = "UEFI" }
