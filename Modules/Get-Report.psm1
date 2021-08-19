@@ -22,6 +22,7 @@ Function Get-Report {
             $users = Import-Csv $defaultADCacheFile
         }
         else {
+            Write-Host "Fetching user data from user AD OU..."
             Get-ADUser -SearchBase $usersOU -Filter '*' -Properties * | Export-Csv $defaultADCacheFile
             $users = Import-Csv $defaultADCacheFile
         }

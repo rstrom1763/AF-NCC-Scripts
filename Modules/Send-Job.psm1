@@ -397,6 +397,9 @@ Function Send-Job {
         $model = $model.Trim()
         Add-Member -InputObject $data -Name "Model" -Value $model -MemberType NoteProperty
 
+        $serial = (Get-WmiObject win32_bios).Serialnumber
+        Add-Member -InputObject $data -Name "Serial Number" -Value $serial -MemberType NoteProperty
+
         $ip = Test-Connection -ComputerName (hostname) -Count 1  | Select-Object IPV4Address
         Add-Member -InputObject $data -Name "IP" -Value $ip.IPV4Address.ToString() -MemberType NoteProperty
 
@@ -404,7 +407,6 @@ Function Send-Job {
         if ($bios -eq 1) { $bios = "Legacy BIOS" }
         elseif ($bios -eq 2) { $bios = "UEFI" }
         else { $bios = "Other" }
-
         Add-Member -InputObject $data -Name "BIOS" -Value $bios -MemberType NoteProperty
 
         $secureBoot = Confirm-SecureBootUEFI
