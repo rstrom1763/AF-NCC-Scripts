@@ -7,7 +7,7 @@ import time
 #import os
 
 test_data = '{"computername":"prprl-05teb99","very test":"lol"}'
-counter = 5000
+counter = 1
 while counter > 0:
     
     headers_dict = {'Content-Type': 'text/plain',"computername":"MAUL"}
