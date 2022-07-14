@@ -4,4 +4,11 @@ body {
     text-align: center;
     font-style: normal;
     font-weight: 200;
+
+
+}
+
+div {
+    text-align: center;
+    align-self: center;
 }

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 
 <html>
-<title>DOD Translator</title>
+<title>LastLogon</title>
 
 <head>
     <link rel="stylesheet" href="app.css">
@@ -11,12 +11,13 @@
 <script type="text/javascript" src='form.js'> </script>
 
 <body>
-    <h1>Translate DOD Speak into English</h1>
+    <h1>Fetch Computer Details</h1>
 
-    Input: <input type="text" name="a" id="a" onfocus="this.value=''" value="Enter Text to Translate"><br><br>
-    <button onclick="send_data((document.getElementById('a').value))" id="button">Translate</button>
-
+    Input: <input type="text" name="a" id="a" onfocus="this.value=''" value="Enter Computername"><br><br>
+    <button onclick="send_data((document.getElementById('a').value))" id="button">Search</button><br><br>
 </body>
+
+<div id="main" style="width:800px; margin: 0 auto;"></div>
 
 <script>
     var inputText = document.getElementById("a");
@@ -29,4 +30,4 @@
     });
 </script>
 
-<h3 id="output"></h3>
+<h2 id="output">Search for a computer</h2>
