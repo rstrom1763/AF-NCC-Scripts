@@ -10,12 +10,11 @@ function printJsonResult(data) {
     data = JSON.parse(data)
     for (key in data) {
         var div = document.createElement("div");
-        div.style.width = "300px";
-        div.style.height = "50px";
-        div.style.background = "red";
-        div.style.color = "black";
-        div.style.left = '50%'
-        div.style.right = '50%'
+        div.className = "center"
+        div.style.color = "black"
+        div.style.width = "25%"
+        div.style.padding = "24px"
+        div.style.border = "4px solid powderblue"
         div.innerHTML = key + ": " + data[key]
         document.getElementById("main").appendChild(div);
         document.getElementById("output").innerHTML = ''
