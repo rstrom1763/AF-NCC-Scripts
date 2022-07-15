@@ -31,7 +31,6 @@ app.get('/getcomputer/:id', (req, res) => {
     try {
         data = fs.readFileSync(datadir + id + '.json', 'utf8');
     } catch (e) {
-        console.log(e)
         res.setHeader('Content-Type', 'text/plain')
         res.statusCode = 404
         res.send("No entry available")
