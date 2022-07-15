@@ -21,7 +21,6 @@ function printJsonResult(data) {
 }
 
 function send_data(data) {
-
     var xhr = new XMLHttpRequest();
     xhr.onreadystatechange = function () {
         if (xhr.readyState === xhr.DONE) {
@@ -33,7 +32,7 @@ function send_data(data) {
             }
         }
     }
-    xhr.open("GET", 'http://plex:8081/getcomputer/' + data, true);
+    xhr.open("GET", 'http://' + location.host + '/getcomputer/' + data, true);
     xhr.send(data.toLowerCase());
 
 };
