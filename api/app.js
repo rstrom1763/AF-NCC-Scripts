@@ -4,8 +4,10 @@ const app = express();
 
 port = 8081;
 app.use(express.json());
+const nocache = require('nocache');//Hopefully disable browser caching
+app.use(nocache());
 app.use(express.static('./'));
-app.disable('etag');
+app.disable('etag', false);
 app.listen(port);
 console.log('Listening on port ' + port + '... ');
 
@@ -25,10 +27,11 @@ app.post('/write', (req, res) => {
 });
 
 app.get('/getcomputer/:id', (req, res) => {
-    var id = req.params['id']
+    var id = req.params['id'].toLowerCase()
     try {
         data = fs.readFileSync(datadir + id + '.json', 'utf8');
     } catch (e) {
+        console.log(e)
         res.setHeader('Content-Type', 'text/plain')
         res.statusCode = 404
         res.send("No entry available")

@@ -1,10 +1,16 @@
 body {
     font-family: source-sans-pro;
-    background-color: #cfcccc;
     text-align: center;
     font-style: normal;
     font-weight: 200;
-    background-color: rgb(255, 119, 56);
+    background-color: rgb(241, 241, 241);
+}
+
+div {
+    background-color: rgb(255, 255, 255);
+    width: 95%;
+    padding: 10px;
+    outline: 4px ridge rgb(227, 227, 255)
 }
 
 .center {

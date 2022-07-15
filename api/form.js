@@ -14,10 +14,9 @@ function printJsonResult(data) {
         div.style.color = "black"
         div.style.width = "25%"
         div.style.padding = "24px"
-        div.style.border = "4px solid powderblue"
+        div.style.border = "4px solid rgb(255,255,255)"
         div.innerHTML = key + ": " + data[key]
         document.getElementById("main").appendChild(div);
-        document.getElementById("output").innerHTML = ''
     }
 }
 
@@ -34,7 +33,7 @@ function send_data(data) {
             }
         }
     }
-    xhr.open("GET", 'http://10.0.0.89:8081/getcomputer/' + data, true);
-    xhr.send(data);
+    xhr.open("GET", 'http://plex:8081/getcomputer/' + data, true);
+    xhr.send(data.toLowerCase());
 
 };
