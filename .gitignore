@@ -1,4 +1,4 @@
-Computer_Reports/data/*
+api/data/*
 node_modules/
 .package.json
 .package-lock.json
