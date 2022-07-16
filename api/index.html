@@ -14,20 +14,22 @@
 <body>
     <h1>Fetch Computer Details</h1>
 
-    Input: <input type="text" name="a" id="a" onfocus="this.value=''" value="Enter Computername"><br><br>
-    <button onclick="send_data((document.getElementById('a').value))" id="button">Search</button><br><br>
-</body>
+    Input: <input type="text" name="input" id="input" onfocus="this.value=''" value="Enter Computername"><br><br>
+    <button onclick="send_data((document.getElementById('input').value))" id="button">Search</button><br><br>
 
-<div class="center" id="main">Your Results Will Show Here</div>
+</body>
+<div class="blank" id="download"></div>
+<div class="results" id="main">Your Results Will Show Here</div>
 
 <script>
-    var inputText = document.getElementById("a");
+    var inputText = document.getElementById("input");
     inputText.addEventListener("keyup", function (event) {
         if (event.keyCode === 13) {
             event.preventDefault();
             document.getElementById("button").click();
-            document.getElementById("button").focus()
+            document.getElementById("button").focus();
         }
     });
 </script>
 
+</html>
