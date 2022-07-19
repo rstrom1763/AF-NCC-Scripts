@@ -5,7 +5,7 @@
 import requests
 import time
 #import os
-
+'''
 test_data = '{"computername":"prprl-05teb99","very test":"lol"}'
 counter = 1
 while counter > 0:
@@ -25,3 +25,7 @@ while counter > 0:
     time.sleep(.05)
 
     counter = counter - 1
+'''
+
+test = requests.get('http://plex:8081/csvtest')
+print(test.content.decode())
