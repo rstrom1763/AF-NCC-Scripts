@@ -2,3 +2,5 @@ api/data/*
 node_modules/
 .package.json
 .package-lock.json
+api/masterjson.json
+api/mastercsv.csv

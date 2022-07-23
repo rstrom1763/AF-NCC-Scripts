@@ -23,7 +23,7 @@ function download_json(computername) {
     var request = new XMLHttpRequest();
     request.responseType = "blob";
     request.onreadystatechange = function () {
-        if (this.readyState == 4 && request.status === 200){
+        if (this.readyState == 4 && request.status === 200) {
             const file = window.URL.createObjectURL(this.response);
             const anchor = document.createElement("a");
             anchor.href = file;

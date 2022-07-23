@@ -1,25 +1,46 @@
 const fs = require('fs');
 const express = require('express');
-let converter = require('json-2-csv')
 const app = express();
-
-'use strict';
 
 port = 8081;
 app.use(express.json());
-const nocache = require('nocache');//Disable browser caching
+const nocache = require('nocache'); //Disable browser caching
 app.use(nocache());
 app.use(express.static('./'));
-app.disable('etag', false);//Disable etag to help prevent http 304 issues
+app.disable('etag', false); //Disable etag to help prevent http 304 issues
 app.listen(port);
 console.log('Listening on port ' + port + '... ');
 
 datadir = './data/';
+process.chdir(__dirname)
 
 try {
-    var masterjson = JSON.parse(fs.readFileSync('./masterjson.json', 'utf-8'));
+    masterjson = JSON.parse(fs.readFileSync('./masterjson.json', 'utf-8'));
 } catch (e) {
-    var masterjson = { "computers": [] }
+    masterjson = {}
+}
+
+//Custom function to convert json data into csv data
+function jsontocsv(data) {
+    var csv = "";
+    keys = Object.keys(data)
+    console.log(keys)
+    //console.log(keys[0])
+    console.log(Object.keys(data[keys[0]]))
+    for (key in Object.keys(data[keys[0]])) {
+        console.log(key)
+        console.log(keys[parseInt(key)])
+        csv = csv + "\"" + key + "\","
+    }
+    csv = csv + "\n"
+    console.log(csv)
+    for (entry in data) {
+        for (value in Object.values(entry)) {
+            csv = csv + "\"" + value + "\","
+        }
+        csv = csv + "\n"
+    }
+    return csv
 }
 
 app.post('/write', (req, res) => {
@@ -30,15 +51,13 @@ app.post('/write', (req, res) => {
         computername = req.body.ComputerName;
     }
     computername = computername.toLowerCase()
-    console.log(computername);
     fs.writeFile(datadir + computername + '.json', JSON.stringify(req.body), (err) => err);
     res.send("Update Written");
-    masterjson['computers'].push(req.body);
-    console.log(typeof(masterjson.computers))
-    mastercsv = converter.json2csv(masterjson.computers, (err, data) => { if (err) { err } }, { "emptyFieldValue": "null", "unwindArrays": true });
-    console.log(JSON.stringify(masterjson))
-    fs.writeFile('./masterjson.json', JSON.stringify(masterjson, (err) => err), (err) => err);
-    fs.writeFile('./mastercsv.csv', converter.json2csv(masterjson, (err) => err), (err) => err);
+
+    masterjson[computername] = req.body;
+    fs.writeFile('./masterjson.json', JSON.stringify(masterjson), (err) => err);
+    console.log(jsontocsv(masterjson))
+    //Need to convert masterjson to csv and make mastercsv equal the result
 
 });
 
