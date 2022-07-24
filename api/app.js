@@ -11,7 +11,7 @@ app.disable('etag', false); //Disable etag to help prevent http 304 issues
 app.listen(port);
 console.log('Listening on port ' + port + '... ');
 
-
+datadir = './data/';
 
 try {
     masterjson = JSON.parse(fs.readFileSync('./masterjson.json', 'utf-8'));
@@ -39,9 +39,9 @@ function jsontocsv(data) {
             csv = csv + "\"" + values[value] + "\","
         }
         csv = csv + "\n"
-        csv = csv.replace(',\n','\n')
+        csv = csv.replace(',\n', '\n')
     }
-    csv = csv.substring(0, csv.length -2);//Gets rid of trailing comma
+    csv = csv.substring(0, csv.length - 2);//Gets rid of trailing comma
     return csv
 }
 
@@ -80,7 +80,7 @@ app.get('/getcomputer/:id', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.send(fs.readFileSync('index.html', 'utf8'))
+    res.send(fs.readFileSync('./index.html', 'utf8'))
 });
 
 app.get('/downloadjson/:computername', function (req, res) {
