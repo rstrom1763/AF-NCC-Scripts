@@ -4,16 +4,65 @@ Function Send-Job {
 
     Param(
 
-        [Parameter(Mandatory = $True)]$Computers, #text file with the computer names on individual lines. 
+        [string]$ComputerOU, #OU path to computer OU to target
+        [string]$ComputerList, #Path to text file containing all of the computers to target
         [Parameter(Mandatory = $True)]$outputURI  #Url of the machine running the Nodejs application Ex: http://computername:8081/write
 
     )
 
-    if (!(Test-Path $computers)) {
-        return (Write-Error "$computers does not exist. ")
+    if ($ComputerOU -ne "" -and $ComputerList -eq "") {
+        try {
+            $computers = Get-ADComputer -Filter * -SearchBase $ComputerOU
+        }
+        catch {
+            Write-Error "Could not fetch computers from Active Directory `n`n$_"
+            return
+        }
+    }
+    elseif ($ComputerList -ne "" -and $ComputerOU -eq "") {
+        try {
+            $computers = Get-Content $ComputerList
+        }
+        catch {
+            Write-Error "Could not import computer list `n`n$_"
+            return
+        }
+    }
+    elseif ($ComputerList -ne "" -and $ComputerOU -ne "") {
+        Set-Content "C:/strom/test.txt" -Value "list "$ComputerList" OU "$ComputerOU" |"
+        return
+    }
+    elseif ($ComputerList -eq "" -and $ComputerOU -eq "") {
+        Write-Error "Must choose targets using either ComputerList or computerOU`n`n$_"
+        return
+    }
+    else {
+        Write-Error "I don't know what you did but it was wrong: 1`n`n$_"
+        return
     }
 
-    $computers = Get-Content $computers | Invoke-Ping -Quiet #Relies on Invoke-Ping
+    if ($null -ne $computers.name) {
+        try {
+            $computers = $computers.name | Invoke-Ping -Quiet #Relies on Invoke-Ping Module
+        }
+        catch {
+            Write-Error "Could not ping the computers from the OU`n`n$_"
+            return
+        }
+    }
+    elseif ($null -eq $computers.name) {
+        try {
+            $computers = $computers | Invoke-Ping -Quiet #Relies on Invoke-Ping Module
+        }
+        catch {
+            Write-Error "Could not ping computers from the computer list`n`n$_"
+            return
+        }
+    }
+    else {
+        Write-Error "I don't know what you did but it was wrong: 2`n`n$_"
+        return
+    }
     
     Remove-Job -State Stopped, Failed
 
@@ -22,7 +71,24 @@ Function Send-Job {
         param(
             $outputURI
         )
+        
+        if (!(Test-Path -Path "C:/temp")) {
+            New-Item -Path "C:/" -Name "temp" -ItemType Directory
+        }
 
+        function Add-Log {
+            #Adds entry to log file
+            param(
+                [Parameter(Mandatory = $True)][string]$Value
+            )
+            $hostname = hostname
+            Add-Content "C:/temp/$hostname.log" -Value "$Value $(Get-Date)"
+        }
+        function Reset-Log {
+            #Empties out log file
+            $hostname = hostname
+            Set-Content "C:/temp/$hostname.log" -Value $null
+        }
         function Get-UserSession {
             <#  
         .SYNOPSIS  
@@ -167,7 +233,7 @@ Function Send-Job {
                                 #if the length is normal, parse substrings
                                 if ($sessions[$_].length -le 82) {
                            
-                                    $temp.Computer = $env:COMPUTERNAME
+                                    $temp.ComputerName = $env:COMPUTERNAME
                                     $temp.Username = $sessions[$_].Substring(1, 22).trim()
                                     $temp.SessionName = $sessions[$_].Substring(23, 19).trim()
                                     $temp.Id = $sessions[$_].Substring(42, 4).trim()
@@ -374,60 +440,134 @@ Function Send-Job {
             [FirmwareType]::GetFirmwareType()
         }
 
-        $data = Get-UserSession | Where-Object { $_.State -like "*Active*" }
+        $hostname = hostname
+        Reset-Log #Clear the local log
 
-        $data.LogonTime = $data.LogonTime.ToString()
+        try {
+            $data = Get-UserSession | Where-Object { $_.State -like "*Active*" }
+            if (($data | Measure-Object).Count -eq 0) { 
+                $data = Get-UserSession | Sort-Object -Property LogonTime -Descending 
+            }
+            $data = $data[0]
+            $data.LogonTime = $data.LogonTime.ToString()
+            Add-Log -Value "Success $data".Replace("`n", "")
+        }
+        catch {
+            Add-Log -Value "Failed user session collection: $_"
+        }
 
-        $SDC = reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OEMInformation\ /v Model | 
-        Select-String Model
-        $SDC = $SDC -replace "Model    REG_SZ", ""
-        $SDC = $SDC -replace "NIPRNet", ""
-        $SDC = $SDC.Trim()
-        Add-Member -InputObject $data -Name "SDC" -Value $SDC -MemberType NoteProperty
+        try {
+            $SDC = reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OEMInformation\ /v Model | 
+            Select-String Model
+            $SDC = $SDC -replace "Model    REG_SZ", ""
+            $SDC = $SDC -replace "NIPRNet", ""
+            $SDC = $SDC.Trim()
+            Add-Member -InputObject $data -Name "SDC" -Value $SDC -MemberType NoteProperty
+            Add-Log -Value "Success: SDC collection"
+        }
+        catch {
+            Add-Log -Value "Fail: SDC Collection: $_"
+        }
 
-        $make = Get-CimInstance -ClassName Win32_ComputerSystem | Select-Object Manufacturer
-        $make = $make.Manufacturer
-        Add-Member -InputObject $data -Name "Make" -Value $make -MemberType NoteProperty
-        $make = $make.ToLower()
+        try {
+            $make = Get-CimInstance -ClassName Win32_ComputerSystem | Select-Object Manufacturer
+            $make = $make.Manufacturer
+            Add-Member -InputObject $data -Name "Make" -Value $make -MemberType NoteProperty
+            $make = $make.ToLower()
+            Add-Log -Value "Success: Make collection"
+        }
+        catch {
+            Add-Log -Value "Fail: Make collection: $_"
+        }
     
-        if ($make -eq "lenovo") { $model = wmic csproduct get version }
-        else { $model = (Get-WmiObject -Class:Win32_ComputerSystem).Model }
-        $model = $model -join " "
-        $model = $model -replace "Version", ""
-        $model = $model.Trim()
-        Add-Member -InputObject $data -Name "Model" -Value $model -MemberType NoteProperty
+        try {
+            if ($make -eq "lenovo") { $model = wmic csproduct get version }
+            else { $model = (Get-WmiObject -Class:Win32_ComputerSystem).Model }
+            $model = $model -join " "
+            $model = $model -replace "Version", ""
+            $model = $model.Trim()
+            Add-Member -InputObject $data -Name "Model" -Value $model -MemberType NoteProperty
+            Add-Log -Value "Success: Model collection"
+        }
+        catch {
+            Add-Log -Value "Fail: Model collection: $_"
+        }
 
-        $serial = (Get-WmiObject win32_bios).Serialnumber
-        Add-Member -InputObject $data -Name "Serial Number" -Value $serial -MemberType NoteProperty
+        try {
+            $serial = (Get-WmiObject win32_bios).Serialnumber
+            Add-Member -InputObject $data -Name "Serial Number" -Value $serial -MemberType NoteProperty
+            Add-Log -Value "Success: Serial collection"
+        }
+        catch {
+            Add-Log -Value "Fail: Serial collection: $_"
+        }
 
-        $ip = Test-Connection -ComputerName (hostname) -Count 1  | Select-Object IPV4Address
-        Add-Member -InputObject $data -Name "IP" -Value $ip.IPV4Address.ToString() -MemberType NoteProperty
+        try {
+            $ip = Test-Connection -ComputerName (hostname) -Count 1  | Select-Object IPV4Address
+            Add-Member -InputObject $data -Name "IP" -Value $ip.IPV4Address.ToString() -MemberType NoteProperty
+            Add-Log -Value "Success: IP collection"
+        }
+        catch {
+            Add-Log -Value "Fail: IP Collection: $_"
+        }
 
-        $bios = Get-BiosType
-        if ($bios -eq 1) { $bios = "Legacy BIOS" }
-        elseif ($bios -eq 2) { $bios = "UEFI" }
-        else { $bios = "Other" }
-        Add-Member -InputObject $data -Name "BIOS" -Value $bios -MemberType NoteProperty
+        try {
+            $bios = Get-BiosType
+            if ($bios -eq 1) { $bios = "Legacy BIOS" }
+            elseif ($bios -eq 2) { $bios = "UEFI" }
+            else { $bios = "Other" }
+            Add-Member -InputObject $data -Name "BIOS" -Value $bios -MemberType NoteProperty
+            Add-Log -Value "Success: BIOS collection"
+        }
+        catch {
+            Add-Log -Value "Fail: BIOS collection: $_"
+        }
 
-        $secureBoot = Confirm-SecureBootUEFI
-        if ($secureBoot -eq $true) { $secureBoot = "Enabled" }
-        elseif ($secureBoot -eq $false) { $secureBoot = "Disabled" }
-        else { $secureBoot = "Other" }
-        Add-Member -InputObject $data -Name "SecureBoot" -Value $secureBoot -MemberType NoteProperty
+        try {
+            $profiles = (Get-ChildItem "C:/users" | Measure-Object).Count
+            Add-Member -InputObject $data -Name "Profiles" -Value $profiles -MemberType NoteProperty
+            Add-Log -Value "Success: Profile collection"
+        }
+        catch {
+            Add-Log -Value "Fail: Profile collection: $_"
+        }
+
+        try {
+            $secureBoot = Confirm-SecureBootUEFI
+            if ($secureBoot -eq $true) { $secureBoot = "Enabled" }
+            elseif ($secureBoot -eq $false) { $secureBoot = "Disabled" }
+            else { $secureBoot = "Other" }
+            Add-Member -InputObject $data -Name "SecureBoot" -Value $secureBoot -MemberType NoteProperty
+            Add-Log -Value "Success: Profile collection"
+        }
+        catch {
+            Add-Log -Value "Fail: Profile collection: $_"
+        }
 
         Add-Member -InputObject $data -Name "EntryDate" -Value ((Get-Date).ToString()) -MemberType NoteProperty
 
         Add-Member -InputObject $data -Name "LastReboot" -Value (Get-CimInstance -ClassName win32_operatingsystem | 
             Select-Object csname, lastbootuptime).lastbootuptime.tostring() -MemberType NoteProperty
 
-        $data = $data | Select-Object -Property * -ExcludeProperty state, idletime, id, sessionname |  ConvertTo-Json
+        $data = $data | Select-Object -Property * -ExcludeProperty idletime, id, sessionname |  ConvertTo-Json
 
-        Invoke-WebRequest -Uri $outputURI -Body $data -Method Post -ContentType 'application/json' -UseBasicParsing
+        try {
+            Invoke-WebRequest -Uri $outputURI -Body $data -Method Post -ContentType 'application/json' -UseBasicParsing
+            Add-Log -Value "Success: POST request: $data"
+        }
+        catch {
+            Add-Log -Value "Fail: POST request: $_"
+        }
+        Set-Content -Path "C:/temp/$(hostname).json" -Value $data
+        Add-Log -Value "Finished"
 
     }
 
+    Remove-Job -State Stopped, Failed
     $totalCount = ($computers | Measure-Object).Count
     $count = 0
+
+    Write-Host "Sending Job to $totalCount computers. "
 
     foreach ($pc in $computers) {
 
@@ -439,13 +579,13 @@ Function Send-Job {
         }
         catch {
 
-            Write-Host "Failed: "$_
+            Write-Host "Failed: $_"
         
         }
 
         $count++
         [int]$percentComplete = ($count / $totalCount) * 100
-        Write-Progress -Activity "Sending Jobs: " -Status "Status: $percentComplete% " -PercentComplete $percentComplete
+        Write-Progress -Activity "Sending Jobs: " -Status "Status: $percentComplete%   $count out of $totalCount" -PercentComplete $percentComplete
 
     }
 

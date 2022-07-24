@@ -10,11 +10,26 @@ Function Get-Report {
     )
     
     [string]$date = Get-Date -Format "MM-dd-yyy HH-mm"
-    $ExportCSV = $ExportCSV.Insert(($ExportCSV.Length-4),$date)
+    $ExportCSV = $ExportCSV.Insert(($ExportCSV.Length - 4), $date)
 
     if (Test-Path "C:/adCache.csv") { $defaultADCacheFile = Get-Item "C:/adCache.csv" } else { $defaultADCacheFile = "C:/adCache.csv" }
     $timespan = New-TimeSpan -Days 7
 
+    if ((((Get-ChildItem -Path $JsonDir) | Measure-Object).Count) -eq 0) {
+        Write-Error "Json directory is empty."
+        return
+    }
+
+    foreach ($json in (Get-ChildItem $jsonDir)){
+        try {
+            (Get-Content $json.fullname | ConvertFrom-Json) > $null
+        }
+        catch {
+            Write-Error "Invalid Json in file: $($json.name)"
+            Write-Host (Get-Content $json.fullname)
+            Remove-Item -Path $json.fullname -WhatIf
+        }
+    }
     Get-ChildItem $jsonDir | Get-Content | ConvertFrom-Json | Export-Csv $exportCSV -NoTypeInformation
 
     if ($adCacheFile -eq "") {
@@ -46,7 +61,7 @@ Function Get-Report {
     foreach ($entry in $data) {
 
         [int]$complete = ($count / $totalCount) * 100
-        Write-Progress -Activity "Cross Referencing with AD" -Status "Status: $complete%" -PercentComplete $complete
+        Write-Progress -Activity "Cross Referencing with AD" -Status "Status: $complete%: $count out of $totalCount" -PercentComplete $complete
 
         if ($entry.Username -NotLike "*No user sessions*") {
 
