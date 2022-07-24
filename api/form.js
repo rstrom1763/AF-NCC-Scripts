@@ -39,6 +39,26 @@ function download_json(computername) {
     request.send();
 }
 
+function downloadreport() {
+    var request = new XMLHttpRequest();
+    request.responseType = "blob";
+    request.onreadystatechange = function () {
+        if (this.readyState == 4 && request.status === 200) {
+            const file = window.URL.createObjectURL(this.response);
+            const anchor = document.createElement("a");
+            anchor.href = file;
+            anchor.download = "mastercsv.csv";
+            document.body.appendChild(anchor);
+            anchor.click();
+        }
+        if (this.readyState == 4 && request.status === 404) {
+            return
+        }
+    }
+    request.open("GET", 'http://' + location.host + '/downloadreport', true);
+    request.send();
+}
+
 
 function create_download_button() {
     div = document.getElementById("download")

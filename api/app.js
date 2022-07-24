@@ -11,8 +11,7 @@ app.disable('etag', false); //Disable etag to help prevent http 304 issues
 app.listen(port);
 console.log('Listening on port ' + port + '... ');
 
-datadir = './data/';
-process.chdir(__dirname)
+
 
 try {
     masterjson = JSON.parse(fs.readFileSync('./masterjson.json', 'utf-8'));
@@ -23,23 +22,26 @@ try {
 //Custom function to convert json data into csv data
 function jsontocsv(data) {
     var csv = "";
+
+    //Create header line
     keys = Object.keys(data)
-    console.log(keys)
-    //console.log(keys[0])
-    console.log(Object.keys(data[keys[0]]))
-    for (key in Object.keys(data[keys[0]])) {
-        console.log(key)
-        console.log(keys[parseInt(key)])
-        csv = csv + "\"" + key + "\","
+    entries = Object.keys(data[keys[0]])
+    for (entry in entries) {
+        csv = csv + "\"" + entries[entry] + "\","
     }
     csv = csv + "\n"
-    console.log(csv)
-    for (entry in data) {
-        for (value in Object.values(entry)) {
-            csv = csv + "\"" + value + "\","
+
+    //Create object lines
+    keys = Object.keys(data)
+    for (entry in keys) {
+        values = Object.values(data[keys[entry]])
+        for (value in values) {
+            csv = csv + "\"" + values[value] + "\","
         }
         csv = csv + "\n"
+        csv = csv.replace(',\n','\n')
     }
+    csv = csv.substring(0, csv.length -2);//Gets rid of trailing comma
     return csv
 }
 
@@ -56,7 +58,7 @@ app.post('/write', (req, res) => {
 
     masterjson[computername] = req.body;
     fs.writeFile('./masterjson.json', JSON.stringify(masterjson), (err) => err);
-    console.log(jsontocsv(masterjson))
+    fs.writeFile('./mastercsv.csv', jsontocsv(masterjson), (err) => err);
     //Need to convert masterjson to csv and make mastercsv equal the result
 
 });
@@ -105,7 +107,7 @@ app.get('/getreport', (req, res) => {
 });
 
 
-app.get('/csvtest', (req, res) => {
-
-
+app.get('/downloadreport', (req, res) => {
+    res.statusCode = 200
+    res.download('./mastercsv.csv');
 })
