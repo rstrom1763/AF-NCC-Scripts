@@ -96,17 +96,6 @@ app.get('/downloadjson/:computername', function (req, res) {
     }
 });
 
-app.get('/getreport', (req, res) => {
-    data = converter.json2csv(masterjson, (err) => err);
-    res.setHeader('Content-Type', 'Application/json')
-    res.send(data)
-
-
-    res.setHeader('Content-Type', 'text/plain')
-
-});
-
-
 app.get('/downloadreport', (req, res) => {
     res.statusCode = 200
     res.download('./mastercsv.csv');
