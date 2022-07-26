@@ -80,7 +80,7 @@ app.get('/getcomputer/:id', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.send(fs.readFileSync('./index.html', 'utf8'))
+    res.send(fs.readFileSync('./static/index.html', 'utf8'))
 });
 
 app.get('/downloadjson/:computername', function (req, res) {
