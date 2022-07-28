@@ -80,7 +80,7 @@ app.get('/getcomputer/:id', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.send(fs.readFileSync('./index.html', 'utf8'))
+    res.send(fs.readFileSync('./static/index.html', 'utf8'))
 });
 
 app.get('/downloadjson/:computername', function (req, res) {
@@ -95,17 +95,6 @@ app.get('/downloadjson/:computername', function (req, res) {
         return
     }
 });
-
-app.get('/getreport', (req, res) => {
-    data = converter.json2csv(masterjson, (err) => err);
-    res.setHeader('Content-Type', 'Application/json')
-    res.send(data)
-
-
-    res.setHeader('Content-Type', 'text/plain')
-
-});
-
 
 app.get('/downloadreport', (req, res) => {
     res.statusCode = 200

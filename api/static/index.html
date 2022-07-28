@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+
+<html>
+<title>LastLogon</title>
+
+<head>
+  <link rel="stylesheet" href="./static/app.css" />
+  <link rel="icon" type="image/x-icon" href="./static/fire.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+</head>
+
+<script type="text/javascript" src="./static/form.js"></script>
+
+<body>
+  <h1>Fetch Computer Details</h1>
+
+  Input:
+  <input type="text" name="input" id="input" onfocus="this.value=''" value="Enter Computername" /><br /><br />
+  <button onclick="send_data((document.getElementById('input').value))" id="button">Search</button><br /><br />
+</body>
+<div class="blank" id="download"></div>
+
+<div>
+  <button onclick="downloadreport()" id="csv_report">
+    Download Full CSV Report</button><br /><br /><br />
+</div>
+
+<div class="results" id="main">Your Results Will Show Here</div>
+
+<script>
+  var inputText = document.getElementById("input");
+  inputText.addEventListener("keyup", function (event) {
+    if (event.keyCode === 13) {
+      event.preventDefault();
+      document.getElementById("button").click();
+      document.getElementById("button").focus();
+    }
+  });
+</script>
+
+</html>
