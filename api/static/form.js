@@ -52,6 +52,7 @@ function downloadreport() {
             anchor.click();
         }
         if (this.readyState == 4 && request.status === 404) {
+
             return
         }
     }
@@ -73,6 +74,12 @@ function create_download_button() {
     document.getElementById("download").appendChild(button)
 };
 
+function remove_download_button() {
+    div = document.getElementById("download")
+    while (div.firstChild) { //Reset the div
+        div.removeChild(div.firstChild);
+    };
+}
 
 function send_data(data) {
     var request = new XMLHttpRequest();
@@ -83,7 +90,8 @@ function send_data(data) {
                 printJsonResult(request.response);
             }
             if (request.status === 404) {
-                document.getElementById('output').innerHTML = '404 not found'
+                remove_download_button()
+                document.getElementById('main').innerHTML = 'Computer Not Found'
             }
         }
     }
