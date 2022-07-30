@@ -83,7 +83,7 @@ app.get('/', (req, res) => {
     res.send(fs.readFileSync('./static/index.html', 'utf8'))
 });
 
-app.get('/downloadjson/:computername', function (req, res) {
+app.get('/downloadjson/:computername', (req, res) => {
     var computername = req.params['computername'].toLowerCase()
     const file = datadir + computername + '.json'
     try {
