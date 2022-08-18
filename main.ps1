@@ -1542,6 +1542,7 @@ function ConvertTo-Hashtable {
 
 #Start the node backend automatically, restarts it if already running
 Get-Process | where {$_.name -like "app"} | Stop-Process
+cd "$PSScriptRoot/api"
 Start-Process -FilePath "$PSScriptRoot/api/app.exe"
 
 #Begins sending out the remote jobs using the local computer for the outputURI
