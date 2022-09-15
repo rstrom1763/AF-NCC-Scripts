@@ -315,6 +315,16 @@ Function Send-Job {
                 
                                 #Output the result
                                 $temp.ComputerName = $env:COMPUTERNAME
+                                
+                                $temp = @(
+                                    
+                                    Computername = $temp.ComputerName
+                                    idletime = $temp.idletime
+                                    Username = $temp.Username
+                                    LogonTime = $temp.LogonTime
+                                    State = $temp.State
+
+                                )
                                 $temp
 
                             }
@@ -324,7 +334,7 @@ Function Send-Job {
 
                         $properties = @{
 
-                            computername = $env:COMPUTERNAME
+                            Computername = $env:COMPUTERNAME
                             idletime     = "No user session"
                             Username     = "No user session"
                             LogonTime    = "No user session"
@@ -467,6 +477,7 @@ Function Send-Job {
         }
         catch {
             Add-Log -Value "Fail: SDC Collection: $_"
+            Add-Member -InputObject $data -Name "SDC" -Value "SDC not found" -MemberType NoteProperty
         }
 
         try {
@@ -478,6 +489,7 @@ Function Send-Job {
         }
         catch {
             Add-Log -Value "Fail: Make collection: $_"
+            Add-Member -InputObject $data -Name "Make" -Value "Make not found" -MemberType NoteProperty
         }
     
         try {
@@ -491,6 +503,7 @@ Function Send-Job {
         }
         catch {
             Add-Log -Value "Fail: Model collection: $_"
+            Add-Member -InputObject $data -Name "Model" -Value "Model not found" -MemberType NoteProperty
         }
 
         try {
@@ -500,6 +513,7 @@ Function Send-Job {
         }
         catch {
             Add-Log -Value "Fail: Serial collection: $_"
+            Add-Member -InputObject $data -Name "Serial Number" -Value "Serial number not found" -MemberType NoteProperty
         }
 
         try {
@@ -508,6 +522,7 @@ Function Send-Job {
             Add-Log -Value "Success: IP collection"
         }
         catch {
+            Add-Member -InputObject $data -Name "IP" -Value "IP not found" -MemberType NoteProperty
             Add-Log -Value "Fail: IP Collection: $_"
         }
 
@@ -521,6 +536,7 @@ Function Send-Job {
         }
         catch {
             Add-Log -Value "Fail: BIOS collection: $_"
+            Add-Member -InputObject $data -Name "BIOS" -Value "BIOS not found" -MemberType NoteProperty
         }
 
         try {
@@ -530,6 +546,7 @@ Function Send-Job {
         }
         catch {
             Add-Log -Value "Fail: Profile collection: $_"
+            Add-Member -InputObject $data -Name "Profiles" -Value "Profiles count not found" -MemberType NoteProperty
         }
 
         try {
@@ -542,14 +559,21 @@ Function Send-Job {
         }
         catch {
             Add-Log -Value "Fail: Profile collection: $_"
+            Add-Member -InputObject $data -Name "SecureBoot" -Value "SecureBoot status not found" -MemberType NoteProperty
         }
 
         Add-Member -InputObject $data -Name "EntryDate" -Value ((Get-Date).ToString()) -MemberType NoteProperty
 
-        Add-Member -InputObject $data -Name "LastReboot" -Value (Get-CimInstance -ClassName win32_operatingsystem | 
+        try{
+
+            Add-Member -InputObject $data -Name "LastReboot" -Value (Get-CimInstance -ClassName win32_operatingsystem | 
             Select-Object csname, lastbootuptime).lastbootuptime.tostring() -MemberType NoteProperty
 
-        $data = $data | Select-Object -Property * -ExcludeProperty idletime, id, sessionname |  ConvertTo-Json
+        } catch {
+            Add-Member -InputObject $data -Name "LastReboot" -Value "Last Reboot date not found" -MemberType NoteProperty
+        }
+
+        $data = $data | Select-Object -Property * -ExcludeProperty idletime, id, sessionname |  Sort-Object | ConvertTo-Json
 
         try {
             Invoke-WebRequest -Uri $outputURI -Body $data -Method Post -ContentType 'application/json' -UseBasicParsing
@@ -558,6 +582,7 @@ Function Send-Job {
         catch {
             Add-Log -Value "Fail: POST request: $_"
         }
+
         Set-Content -Path "C:/temp/$(hostname).json" -Value $data
         Add-Log -Value "Finished"
 
@@ -1554,5 +1579,3 @@ Send-Job -computerOU "OU=McConnell AFB Computers,OU=McConnell AFB,OU=AFCONUSWEST
 
 #Example syntax for Get-Report
 #Get-Report -jsonDir "C:\Strom\GitHub\AF-NCC-Scripts\last_logon\Data" -exportCSV C:/strom/LastLogon/report.csv -base "McConnell AFB" -UsersOU "OU=McConnell AFB Users,OU=McConnell AFB,OU=AFCONUSWEST,OU=Bases,DC=AREA52,DC=AFNOAPPS,DC=USAF,DC=MIL" -ComputersOU "OU=McConnell AFB Computers,OU=McConnell AFB,OU=AFCONUSWEST,OU=Bases,DC=AREA52,DC=AFNOAPPS,DC=USAF,DC=MIL"
-
-
