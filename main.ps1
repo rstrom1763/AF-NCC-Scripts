@@ -316,7 +316,7 @@ Function Send-Job {
                                 #Output the result
                                 $temp.ComputerName = $env:COMPUTERNAME
                                 
-                                $temp = @(
+                                $temp = @{
                                     
                                     Computername = $temp.ComputerName
                                     idletime = $temp.idletime
@@ -324,8 +324,9 @@ Function Send-Job {
                                     LogonTime = $temp.LogonTime
                                     State = $temp.State
 
-                                )
-                                $temp
+                                }
+                                $output = New-Object psobject -Property $properties
+                                $output
 
                             }
                         }
