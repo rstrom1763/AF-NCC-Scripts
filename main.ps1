@@ -90,263 +90,202 @@ Function Send-Job {
             Set-Content "C:/temp/$hostname.log" -Value $null
         }
         function Get-UserSession {
-            <#  
-        .SYNOPSIS  
-            Retrieves all user sessions from local or remote computers(s)
-
-        .DESCRIPTION
-            Retrieves all user sessions from local or remote computer(s).
-    
-            Note:   Requires query.exe in order to run
-            Note:   This works against Windows Vista and later systems provided the following registry value is in place
-                    HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Terminal Server\AllowRemoteRPC = 1
-            Note:   If query.exe takes longer than 15 seconds to return, an error is thrown and the next computername is processed.  Suppress this with -erroraction silentlycontinue
-            Note:   If $sessions is empty, we return a warning saying no users.  Suppress this with -warningaction silentlycontinue
-
-        .PARAMETER computername
-            Name of computer(s) to run session query against
-              
-        .parameter parseIdleTime
-            Parse idle time into a timespan object
-
-        .parameter timeout
-            Seconds to wait before ending query.exe process.  Helpful in situations where query.exe hangs due to the state of the remote system.
-                    
-        .FUNCTIONALITY
-            Computers
-
-        .EXAMPLE
-            Get-usersession -computername "server1"
-
-            Query all current user sessions on 'server1'
-
-        .EXAMPLE
-            Get-UserSession -computername $servers -parseIdleTime | ?{$_.idletime -gt [timespan]"1:00"} | ft -AutoSize
-
-            Query all servers in the array $servers, parse idle time, check for idle time greater than 1 hour.
-
-        .NOTES
-            Thanks to Boe Prox for the ideas - http://learn-powershell.net/2010/11/01/quick-hit-find-currently-logged-on-users/
-
-        .LINK
-            http://gallery.technet.microsoft.com/Get-UserSessions-Parse-b4c97837
-
-        #> 
+            <#
+            .SYNOPSIS
+                Retrieves all user sessions from local or remote computers(s)
+            
+            .DESCRIPTION
+                Retrieves all user sessions from local or remote computer(s).
+                
+                Note: Requires query.exe in order to run
+                Note: This works against Windows Vista and later systems provided the following registry value is in place
+                        HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Terminal Server\AllowRemoteRPC = 1
+                Note: If query.exe takes longer than 15 seconds to return, an error is thrown and the next computername is processed. Suppress this with -erroraction silentlycontinue
+                Note: If $sessions is empty, we return a warning saying no users. Suppress this with -warningaction silentlycontinue
+            
+            .PARAMETER computername
+                Name of computer(s) to run session query against
+                          
+            .parameter parseIdleTime
+                Parse idle time into a timespan object
+            
+            .parameter timeout
+                Seconds to wait before ending query.exe process. Helpful in situations where query.exe hangs due to the state of the remote system.
+                                
+            .FUNCTIONALITY
+                Computers
+            
+            .EXAMPLE
+                Get-usersession -computername "server1"
+            
+                Query all current user sessions on 'server1'
+            
+            .EXAMPLE
+                Get-UserSession -computername $servers -parseIdleTime | ?{$_.idletime -gt [timespan]"1:00"} | ft -AutoSize
+            
+                Query all servers in the array $servers, parse idle time, check for idle time greater than 1 hour.
+            
+            .NOTES
+                Thanks to Boe Prox for the ideas - http://learn-powershell.net/2010/11/01/quick-hit-find-currently-logged-on-users/
+            
+            .LINK
+                http://gallery.technet.microsoft.com/Get-UserSessions-Parse-b4c97837
+            
+            #> 
             [cmdletbinding()]
             Param(
                 [Parameter(
                     Position = 0,
                     ValueFromPipeline = $True)]
-                [string[]]$ComputerName = "localhost",
-
-                [switch]$ParseIdleTime,
-
-                [validaterange(0, 120)]
-                [int]$Timeout = 15
-            )             
-            Process {
-                ForEach ($computer in $ComputerName) {
-        
-                    #start query.exe using .net and cmd /c.  We do this to avoid cases where query.exe hangs
-
-                    #build temp file to store results.  Loop until we see the file
-                    Try {
-                        $Started = Get-Date
-                        $tempFile = [System.IO.Path]::GetTempFileName()
-                        
-                        Do {
-                            start-sleep -Milliseconds 300
-                            
-                            if ( ((Get-Date) - $Started).totalseconds -gt 10) {
-                                Throw "Timed out waiting for temp file '$TempFile'"
-                            }
-                        }
-                        Until(Test-Path -Path $tempfile)
-                    }
-                    Catch {
-                        Write-Error "Error for '$Computer': $_"
-                        Continue
-                    }
-
-                    #Record date.  Start process to run query in cmd.  I use starttime independently of process starttime due to a few issues we ran into
-                    $Started = Get-Date
-                    $p = Start-Process -FilePath C:\windows\system32\cmd.exe -ArgumentList "/c query user /server:$computer > $tempfile" -WindowStyle hidden -passthru
-
-                    #we can't read in info or else it will freeze.  We cant run waitforexit until we read the standard output, or we run into issues...
-                    #handle timeouts on our own by watching hasexited
-                    $stopprocessing = $false
-                    do {
-                    
-                        #check if process has exited
-                        $hasExited = $p.HasExited
-                
-                        #check if there is still a record of the process
-                        Try {
-                            $proc = Get-Process -id $p.id -ErrorAction stop
-                        }
-                        Catch {
-                            $proc = $null
-                        }
-
-                        #sleep a bit
-                        start-sleep -seconds .5
-
-                        #If we timed out and the process has not exited, kill the process
-                        if ( ( (Get-Date) - $Started ).totalseconds -gt $timeout -and -not $hasExited -and $proc) {
-                            $p.kill()
-                            $stopprocessing = $true
-                            Remove-Item $tempfile -force
-                            Write-Error "$computer`: Query.exe took longer than $timeout seconds to execute"
-                        }
-                    }
-                    until($hasexited -or $stopProcessing -or -not $proc)
-                    
-                    if ($stopprocessing) {
-                        Continue
-                    }
-
-                    #if we are still processing, read the output!
-                    try {
-                        $sessions = Get-Content $tempfile -ErrorAction stop
-                        Remove-Item $tempfile -force
-                    }
-                    catch {
-                        Write-Error "Could not process results for '$computer' in '$tempfile': $_"
-                        continue
-                    }
-        
-                    #handle no results
-                    if ($sessions) {
-
-                        1..($sessions.count - 1) | Foreach-Object {
+                [string[]]$computername = "localhost",
             
-                            #Start to build the custom object
-                            $temp = "" | Select-Object ComputerName, Username, SessionName, Id, State, IdleTime, LogonTime
-                            $temp.ComputerName = $computer
-
-                            #The output of query.exe is dynamic. 
-                            #strings should be 82 chars by default, but could reach higher depending on idle time.
-                            #we use arrays to handle the latter.
-
-                            if ($sessions[$_].length -gt 5) {
-                        
-                                #if the length is normal, parse substrings
-                                if ($sessions[$_].length -le 82) {
-                           
-                                    $temp.ComputerName = $env:COMPUTERNAME
-                                    $temp.Username = $sessions[$_].Substring(1, 22).trim()
-                                    $temp.SessionName = $sessions[$_].Substring(23, 19).trim()
-                                    $temp.Id = $sessions[$_].Substring(42, 4).trim()
-                                    $temp.State = $sessions[$_].Substring(46, 8).trim()
-                                    $temp.IdleTime = $sessions[$_].Substring(54, 11).trim()
-                                    $logonTimeLength = $sessions[$_].length - 65
-                                    try {
-                                        $temp.LogonTime = Get-Date $sessions[$_].Substring(65, $logonTimeLength).trim() -ErrorAction stop
-                                    }
-                                    catch {
-                                        #Cleaning up code, investigate reason behind this.  Long way of saying $null....
-                                        $temp.LogonTime = $sessions[$_].Substring(65, $logonTimeLength).trim() | Out-Null
-                                    }
-
-                                }
-                        
-                                #Otherwise, create array and parse
-                                else {                                       
-                                    $array = $sessions[$_] -replace "\s+", " " -split " "
-                                    $temp.Username = $array[1]
-                
-                                    #in some cases the array will be missing the session name.  array indices change
-                                    if ($array.count -lt 9) {
-                                        $temp.SessionName = ""
-                                        $temp.Id = $array[2]
-                                        $temp.State = $array[3]
-                                        $temp.IdleTime = $array[4]
-                                        try {
-                                            $temp.LogonTime = Get-Date $($array[5] + " " + $array[6] + " " + $array[7]) -ErrorAction stop
-                                        }
-                                        catch {
-                                            $temp.LogonTime = ($array[5] + " " + $array[6] + " " + $array[7]).trim()
-                                        }
-                                    }
-                                    else {
-                                        $temp.SessionName = $array[2]
-                                        $temp.Id = $array[3]
-                                        $temp.State = $array[4]
-                                        $temp.IdleTime = $array[5]
-                                        try {
-                                            $temp.LogonTime = Get-Date $($array[6] + " " + $array[7] + " " + $array[8]) -ErrorAction stop
-                                        }
-                                        catch {
-                                            $temp.LogonTime = ($array[6] + " " + $array[7] + " " + $array[8]).trim()
-                                        }
-                                    }
-                                }
-
-                                #if specified, parse idle time to timespan
-                                if ($parseIdleTime) {
-                                    $string = $temp.idletime
-                
-                                    #quick function to handle minutes or hours:minutes
-                                    function Convert-ShortIdle {
-                                        param($string)
-                                        if ($string -match "\:") {
-                                            [timespan]$string
-                                        }
-                                        else {
-                                            New-TimeSpan -Minutes $string
-                                        }
-                                    }
-                
-                                    #to the left of + is days
-                                    if ($string -match "\+") {
-                                        $days = New-TimeSpan -days ($string -split "\+")[0]
-                                        $hourMin = Convert-ShortIdle ($string -split "\+")[1]
-                                        $temp.idletime = $days + $hourMin
-                                    }
-                                    #. means less than a minute
-                                    elseif ($string -like "." -or $string -like "none") {
-                                        $temp.idletime = [timespan]"0:00"
-                                    }
-                                    #hours and minutes
-                                    else {
-                                        $temp.idletime = Convert-ShortIdle $string
-                                    }
-                                }
-                
-                                #Output the result
-                                $temp.ComputerName = $env:COMPUTERNAME
+                [switch]$parseIdleTime,
+            
+                [validaterange(0, 120)]$timeout = 15
+            )             
+            
+            ForEach ($computer in $computername) {
+                    
+                #start query.exe using .net and cmd /c. We do this to avoid cases where query.exe hangs
+            
+                #build temp file to store results. Loop until this works
+                Do {
+                    $tempFile = [System.IO.Path]::GetTempFileName()
+                    start-sleep -Milliseconds 300
+                }
+                Until(test-path $tempfile)
+            
+                #Record date. Start process to run query in cmd. I use starttime independently of process starttime due to a few issues we ran into
+                $startTime = Get-Date
+                $p = Start-Process -FilePath C:\windows\system32\cmd.exe -ArgumentList "/c query user /server:$computer > $tempfile" -WindowStyle hidden -passthru
+            
+                #we can't read in info or else it will freeze. We cant run waitforexit until we read the standard output, or we run into issues...
+                #handle timeouts on our own by watching hasexited
+                $stopprocessing = $false
+                do {
                                 
-                                $temp = @{
-                                    
-                                    Computername = $temp.ComputerName
-                                    idletime = $temp.idletime
-                                    Username = $temp.Username
-                                    LogonTime = $temp.LogonTime
-                                    State = $temp.State
-
-                                }
-                                $output = New-Object psobject -Property $properties
-                                $output
-
-                            }
-                        }
-                    }            
-                    else {
-
-                        $properties = @{
-
-                            Computername = $env:COMPUTERNAME
-                            idletime     = "No user session"
-                            Username     = "No user session"
-                            LogonTime    = "No user session"
-                            State        = "Active"
-
-                        }
-                        $output = New-Object psobject -Property $properties
-                        $output
-                        
-
+                    #check if process has exited
+                    $hasExited = $p.HasExited
+                            
+                    #check if there is still a record of the process
+                    Try { $proc = get-process -id $p.id -ErrorAction stop }
+                    Catch { $proc = $null }
+            
+                    #sleep a bit
+                    start-sleep -seconds .5
+            
+                    #check if we have timed out, unless the process has exited
+                    if ( ( (Get-Date) - $startTime ).totalseconds -gt $timeout -and -not $hasExited -and $proc) {
+                        $p.kill()
+                        $stopprocessing = $true
+                        remove-item $tempfile -force
+                        Write-Error "$computer`: Query.exe took longer than $timeout seconds to execute"
                     }
+                }
+                until($hasexited -or $stopProcessing -or -not $proc)
+                if ($stopprocessing) { Continue }
+            
+                #if we are still processing, read the output!
+                $sessions = get-content $tempfile
+                remove-item $tempfile -force
+                    
+                #handle no results
+                if ($sessions) {
+            
+                    1..($sessions.count - 1) | % {
+                        
+                        #Start to build the custom object
+                        $temp = "" | Select-Object ComputerName, Username, SessionName, Id, State, IdleTime, LogonTime
+                        $temp.ComputerName = $env:COMPUTERNAME
+            
+                        #The output of query.exe is dynamic.
+                        #strings should be 82 chars by default, but could reach higher depending on idle time.
+                        #we use arrays to handle the latter.
+            
+                        if ($sessions[$_].length -gt 5) {
+                            #if the length is normal, parse substrings
+                            if ($sessions[$_].length -le 82) {
+                                       
+                                $temp.Username = $sessions[$_].Substring(1, 22).trim()
+                                $temp.SessionName = $sessions[$_].Substring(23, 19).trim()
+                                $temp.Id = $sessions[$_].Substring(42, 4).trim()
+                                $temp.State = $sessions[$_].Substring(46, 8).trim()
+                                $temp.IdleTime = $sessions[$_].Substring(54, 11).trim()
+                                $logonTimeLength = $sessions[$_].length - 65
+                                try {
+                                    $temp.LogonTime = get-date $sessions[$_].Substring(65, $logonTimeLength).trim()
+                                }
+                                catch {
+                                    $temp.LogonTime = $sessions[$_].Substring(65, $logonTimeLength).trim() | out-null
+                                }
+            
+                            }
+                            #Otherwise, create array and parse
+                            else {                                       
+                                $array = $sessions[$_] -replace "\s+", " " -split " "
+                                $temp.Username = $array[1]
+                            
+                                #in some cases the array will be missing the session name. array indices change
+                                if ($array.count -lt 9) {
+                                    $temp.SessionName = ""
+                                    $temp.Id = $array[2]
+                                    $temp.State = $array[3]
+                                    $temp.IdleTime = $array[4]
+                                    $temp.LogonTime = get-date $($array[5] + " " + $array[6] + " " + $array[7])
+                                }
+                                else {
+                                    $temp.SessionName = $array[2]
+                                    $temp.Id = $array[3]
+                                    $temp.State = $array[4]
+                                    $temp.IdleTime = $array[5]
+                                    $temp.LogonTime = get-date $($array[6] + " " + $array[7] + " " + $array[8])
+                                }
+                            }
+            
+                            #if specified, parse idle time to timespan
+                            if ($parseIdleTime) {
+                                $string = $temp.idletime
+                            
+                                #quick function to handle minutes or hours:minutes
+                                function convert-shortIdle {
+                                    param($string)
+                                    if ($string -match "\:") {
+                                        [timespan]$string
+                                    }
+                                    else {
+                                        New-TimeSpan -minutes $string
+                                    }
+                                }
+                            
+                                #to the left of + is days
+                                if ($string -match "\+") {
+                                    $days = new-timespan -days ($string -split "\+")[0]
+                                    $hourMin = convert-shortIdle ($string -split "\+")[1]
+                                    $temp.idletime = $days + $hourMin
+                                }
+                                #. means less than a minute
+                                elseif ($string -like "." -or $string -like "none") {
+                                    $temp.idletime = [timespan]"0:00"
+                                }
+                                #hours and minutes
+                                else {
+                                    $temp.idletime = convert-shortIdle $string
+                                }
+                            }
+                            
+                            #Output the result
+                            $temp
+                        }
+                    }
+                }            
+                else { 
+                    $temp.Computername = $env:COMPUTERNAME
+                    $temp.SessionName = ""
+                    $temp.Id = "No User Session"
+                    $temp.State = "No User Session"
+                    $temp.IdleTime = "No User Session"
+                    $temp.LogonTime = "No User Session"
+                    $temp
                 }
             }
         }
@@ -565,12 +504,13 @@ Function Send-Job {
 
         Add-Member -InputObject $data -Name "EntryDate" -Value ((Get-Date).ToString()) -MemberType NoteProperty
 
-        try{
+        try {
 
             Add-Member -InputObject $data -Name "LastReboot" -Value (Get-CimInstance -ClassName win32_operatingsystem | 
-            Select-Object csname, lastbootuptime).lastbootuptime.tostring() -MemberType NoteProperty
+                Select-Object csname, lastbootuptime).lastbootuptime.tostring() -MemberType NoteProperty
 
-        } catch {
+        }
+        catch {
             Add-Member -InputObject $data -Name "LastReboot" -Value "Last Reboot date not found" -MemberType NoteProperty
         }
 
@@ -618,9 +558,8 @@ Function Send-Job {
     Write-Host "Job Distribution Complete! "
 
 }
-Function Invoke-Ping 
-{
-<#
+Function Invoke-Ping {
+    <#
 .SYNOPSIS
     Ping or test connectivity to systems in parallel
     
@@ -679,18 +618,18 @@ Function Invoke-Ping
     Computers
 
 #>
-    [cmdletbinding(DefaultParameterSetName='Ping')]
+    [cmdletbinding(DefaultParameterSetName = 'Ping')]
     param(
-        [Parameter( ValueFromPipeline=$true,
-                    ValueFromPipelineByPropertyName=$true, 
-                    Position=0)]
+        [Parameter( ValueFromPipeline = $true,
+            ValueFromPipelineByPropertyName = $true, 
+            Position = 0)]
         [string[]]$ComputerName,
         
-        [Parameter( ParameterSetName='Detail')]
-        [validateset("*","WSMan","RemoteReg","RPC","RDP","SMB")]
+        [Parameter( ParameterSetName = 'Detail')]
+        [validateset("*", "WSMan", "RemoteReg", "RPC", "RDP", "SMB")]
         [string[]]$Detail,
         
-        [Parameter(ParameterSetName='Ping')]
+        [Parameter(ParameterSetName = 'Ping')]
         [switch]$Quiet,
         
         [int]$Timeout = 20,
@@ -699,86 +638,82 @@ Function Invoke-Ping
 
         [switch]$NoCloseOnTimeout
     )
-    Begin
-    {
+    Begin {
 
         #http://gallery.technet.microsoft.com/Run-Parallel-Parallel-377fd430
         function Invoke-Parallel {
-            [cmdletbinding(DefaultParameterSetName='ScriptBlock')]
+            [cmdletbinding(DefaultParameterSetName = 'ScriptBlock')]
             Param (   
-                [Parameter(Mandatory=$false,position=0,ParameterSetName='ScriptBlock')]
-                    [System.Management.Automation.ScriptBlock]$ScriptBlock,
+                [Parameter(Mandatory = $false, position = 0, ParameterSetName = 'ScriptBlock')]
+                [System.Management.Automation.ScriptBlock]$ScriptBlock,
 
-                [Parameter(Mandatory=$false,ParameterSetName='ScriptFile')]
-                [ValidateScript({test-path $_ -pathtype leaf})]
-                    $ScriptFile,
+                [Parameter(Mandatory = $false, ParameterSetName = 'ScriptFile')]
+                [ValidateScript({ test-path $_ -pathtype leaf })]
+                $ScriptFile,
 
-                [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-                [Alias('CN','__Server','IPAddress','Server','ComputerName')]    
-                    [PSObject]$InputObject,
+                [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+                [Alias('CN', '__Server', 'IPAddress', 'Server', 'ComputerName')]    
+                [PSObject]$InputObject,
 
-                    [PSObject]$Parameter,
+                [PSObject]$Parameter,
 
-                    [switch]$ImportVariables,
+                [switch]$ImportVariables,
 
-                    [switch]$ImportModules,
+                [switch]$ImportModules,
 
-                    [int]$Throttle = 20,
+                [int]$Throttle = 20,
 
-                    [int]$SleepTimer = 200,
+                [int]$SleepTimer = 200,
 
-                    [int]$RunspaceTimeout = 0,
+                [int]$RunspaceTimeout = 0,
 
-			        [switch]$NoCloseOnTimeout = $false,
+                [switch]$NoCloseOnTimeout = $false,
 
-                    [int]$MaxQueue,
+                [int]$MaxQueue,
 
-                [validatescript({Test-Path (Split-Path $_ -parent)})]
-                    [string]$LogFile = "C:\temp\log.log",
+                [validatescript({ Test-Path (Split-Path $_ -parent) })]
+                [string]$LogFile = "C:\temp\log.log",
 
-			        [switch] $Quiet = $false
+                [switch] $Quiet = $false
             )
     
             Begin {
                 
                 #No max queue specified?  Estimate one.
                 #We use the script scope to resolve an odd PowerShell 2 issue where MaxQueue isn't seen later in the function
-                if( -not $PSBoundParameters.ContainsKey('MaxQueue') )
-                {
-                    if($RunspaceTimeout -ne 0){ $script:MaxQueue = $Throttle }
-                    else{ $script:MaxQueue = $Throttle * 3 }
+                if ( -not $PSBoundParameters.ContainsKey('MaxQueue') ) {
+                    if ($RunspaceTimeout -ne 0) { $script:MaxQueue = $Throttle }
+                    else { $script:MaxQueue = $Throttle * 3 }
                 }
-                else
-                {
+                else {
                     $script:MaxQueue = $MaxQueue
                 }
 
                 Write-Verbose "Throttle: '$throttle' SleepTimer '$sleepTimer' runSpaceTimeout '$runspaceTimeout' maxQueue '$maxQueue' logFile '$logFile'"
 
                 #If they want to import variables or modules, create a clean runspace, get loaded items, use those to exclude items
-                if ($ImportVariables -or $ImportModules)
-                {
+                if ($ImportVariables -or $ImportModules) {
                     $StandardUserEnv = [powershell]::Create().addscript({
 
-                        #Get modules and snapins in this clean runspace
-                        $Modules = Get-Module | Select -ExpandProperty Name
-                        $Snapins = Get-PSSnapin | Select -ExpandProperty Name
+                            #Get modules and snapins in this clean runspace
+                            $Modules = Get-Module | Select -ExpandProperty Name
+                            $Snapins = Get-PSSnapin | Select -ExpandProperty Name
 
-                        #Get variables in this clean runspace
-                        #Called last to get vars like $? into session
-                        $Variables = Get-Variable | Select -ExpandProperty Name
+                            #Get variables in this clean runspace
+                            #Called last to get vars like $? into session
+                            $Variables = Get-Variable | Select -ExpandProperty Name
                 
-                        #Return a hashtable where we can access each.
-                        @{
-                            Variables = $Variables
-                            Modules = $Modules
-                            Snapins = $Snapins
-                        }
-                    }).invoke()[0]
+                            #Return a hashtable where we can access each.
+                            @{
+                                Variables = $Variables
+                                Modules   = $Modules
+                                Snapins   = $Snapins
+                            }
+                        }).invoke()[0]
             
                     if ($ImportVariables) {
                         #Exclude common parameters, bound parameters, and automatic variables
-                        Function _temp {[cmdletbinding()] param() }
+                        Function _temp { [cmdletbinding()] param() }
                         $VariablesToExclude = @( (Get-Command _temp | Select -ExpandProperty parameters).Keys + $PSBoundParameters.Keys + $StandardUserEnv.Variables )
                         Write-Verbose "Excluding variables $( ($VariablesToExclude | sort ) -join ", ")"
 
@@ -791,266 +726,248 @@ Function Invoke-Ping
 
                     }
 
-                    if ($ImportModules) 
-                    {
-                        $UserModules = @( Get-Module | Where {$StandardUserEnv.Modules -notcontains $_.Name -and (Test-Path $_.Path -ErrorAction SilentlyContinue)} | Select -ExpandProperty Path )
-                        $UserSnapins = @( Get-PSSnapin | Select -ExpandProperty Name | Where {$StandardUserEnv.Snapins -notcontains $_ } ) 
+                    if ($ImportModules) {
+                        $UserModules = @( Get-Module | Where { $StandardUserEnv.Modules -notcontains $_.Name -and (Test-Path $_.Path -ErrorAction SilentlyContinue) } | Select -ExpandProperty Path )
+                        $UserSnapins = @( Get-PSSnapin | Select -ExpandProperty Name | Where { $StandardUserEnv.Snapins -notcontains $_ } ) 
                     }
                 }
 
                 #region functions
             
-                    Function Get-RunspaceData {
-                        [cmdletbinding()]
-                        param( [switch]$Wait )
+                Function Get-RunspaceData {
+                    [cmdletbinding()]
+                    param( [switch]$Wait )
 
-                        #loop through runspaces
-                        #if $wait is specified, keep looping until all complete
-                        Do {
+                    #loop through runspaces
+                    #if $wait is specified, keep looping until all complete
+                    Do {
 
-                            #set more to false for tracking completion
-                            $more = $false
+                        #set more to false for tracking completion
+                        $more = $false
 
-                            #Progress bar if we have inputobject count (bound parameter)
-                            if (-not $Quiet) {
-						        Write-Progress  -Activity "Running Query" -Status "Starting threads"`
-							        -CurrentOperation "$startedCount threads defined - $totalCount input objects - $script:completedCount input objects processed"`
-							        -PercentComplete $( Try { $script:completedCount / $totalCount * 100 } Catch {0} )
-					        }
+                        #Progress bar if we have inputobject count (bound parameter)
+                        if (-not $Quiet) {
+                            Write-Progress  -Activity "Running Query" -Status "Starting threads"`
+                                -CurrentOperation "$startedCount threads defined - $totalCount input objects - $script:completedCount input objects processed"`
+                                -PercentComplete $( Try { $script:completedCount / $totalCount * 100 } Catch { 0 } )
+                        }
 
-                            #run through each runspace.           
-                            Foreach($runspace in $runspaces) {
+                        #run through each runspace.           
+                        Foreach ($runspace in $runspaces) {
                     
-                                #get the duration - inaccurate
-                                $currentdate = Get-Date
-                                $runtime = $currentdate - $runspace.startTime
-                                $runMin = [math]::Round( $runtime.totalminutes ,2 )
+                            #get the duration - inaccurate
+                            $currentdate = Get-Date
+                            $runtime = $currentdate - $runspace.startTime
+                            $runMin = [math]::Round( $runtime.totalminutes , 2 )
 
-                                #set up log object
-                                $log = "" | select Date, Action, Runtime, Status, Details
-                                $log.Action = "Removing:'$($runspace.object)'"
-                                $log.Date = $currentdate
-                                $log.Runtime = "$runMin minutes"
+                            #set up log object
+                            $log = "" | select Date, Action, Runtime, Status, Details
+                            $log.Action = "Removing:'$($runspace.object)'"
+                            $log.Date = $currentdate
+                            $log.Runtime = "$runMin minutes"
 
-                                #If runspace completed, end invoke, dispose, recycle, counter++
-                                If ($runspace.Runspace.isCompleted) {
+                            #If runspace completed, end invoke, dispose, recycle, counter++
+                            If ($runspace.Runspace.isCompleted) {
                             
-                                    $script:completedCount++
+                                $script:completedCount++
                         
-                                    #check if there were errors
-                                    if($runspace.powershell.Streams.Error.Count -gt 0) {
+                                #check if there were errors
+                                if ($runspace.powershell.Streams.Error.Count -gt 0) {
                                 
-                                        #set the logging info and move the file to completed
-                                        $log.status = "CompletedWithErrors"
-                                        Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
-                                        foreach($ErrorRecord in $runspace.powershell.Streams.Error) {
-                                            Write-Error -ErrorRecord $ErrorRecord
-                                        }
-                                    }
-                                    else {
-                                
-                                        #add logging details and cleanup
-                                        $log.status = "Completed"
-                                        Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
-                                    }
-
-                                    #everything is logged, clean up the runspace
-                                    $runspace.powershell.EndInvoke($runspace.Runspace)
-                                    $runspace.powershell.dispose()
-                                    $runspace.Runspace = $null
-                                    $runspace.powershell = $null
-
-                                }
-
-                                #If runtime exceeds max, dispose the runspace
-                                ElseIf ( $runspaceTimeout -ne 0 -and $runtime.totalseconds -gt $runspaceTimeout) {
-                            
-                                    $script:completedCount++
-                                    $timedOutTasks = $true
-                            
-							        #add logging details and cleanup
-                                    $log.status = "TimedOut"
+                                    #set the logging info and move the file to completed
+                                    $log.status = "CompletedWithErrors"
                                     Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
-                                    Write-Error "Runspace timed out at $($runtime.totalseconds) seconds for the object:`n$($runspace.object | out-string)"
-
-                                    #Depending on how it hangs, we could still get stuck here as dispose calls a synchronous method on the powershell instance
-                                    if (!$noCloseOnTimeout) { $runspace.powershell.dispose() }
-                                    $runspace.Runspace = $null
-                                    $runspace.powershell = $null
-                                    $completedCount++
-
+                                    foreach ($ErrorRecord in $runspace.powershell.Streams.Error) {
+                                        Write-Error -ErrorRecord $ErrorRecord
+                                    }
                                 }
+                                else {
+                                
+                                    #add logging details and cleanup
+                                    $log.status = "Completed"
+                                    Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
+                                }
+
+                                #everything is logged, clean up the runspace
+                                $runspace.powershell.EndInvoke($runspace.Runspace)
+                                $runspace.powershell.dispose()
+                                $runspace.Runspace = $null
+                                $runspace.powershell = $null
+
+                            }
+
+                            #If runtime exceeds max, dispose the runspace
+                            ElseIf ( $runspaceTimeout -ne 0 -and $runtime.totalseconds -gt $runspaceTimeout) {
+                            
+                                $script:completedCount++
+                                $timedOutTasks = $true
+                            
+                                #add logging details and cleanup
+                                $log.status = "TimedOut"
+                                Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
+                                Write-Error "Runspace timed out at $($runtime.totalseconds) seconds for the object:`n$($runspace.object | out-string)"
+
+                                #Depending on how it hangs, we could still get stuck here as dispose calls a synchronous method on the powershell instance
+                                if (!$noCloseOnTimeout) { $runspace.powershell.dispose() }
+                                $runspace.Runspace = $null
+                                $runspace.powershell = $null
+                                $completedCount++
+
+                            }
                    
-                                #If runspace isn't null set more to true  
-                                ElseIf ($runspace.Runspace -ne $null ) {
-                                    $log = $null
-                                    $more = $true
-                                }
+                            #If runspace isn't null set more to true  
+                            ElseIf ($runspace.Runspace -ne $null ) {
+                                $log = $null
+                                $more = $true
+                            }
 
-                                #log the results if a log file was indicated
-                                if($logFile -and $log){
+                            #log the results if a log file was indicated
+                            if ($logFile -and $log) {
                                     ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1] | out-file $LogFile -append
-                                }
                             }
+                        }
 
-                            #Clean out unused runspace jobs
-                            $temphash = $runspaces.clone()
-                            $temphash | Where { $_.runspace -eq $Null } | ForEach {
-                                $Runspaces.remove($_)
-                            }
+                        #Clean out unused runspace jobs
+                        $temphash = $runspaces.clone()
+                        $temphash | Where { $_.runspace -eq $Null } | ForEach {
+                            $Runspaces.remove($_)
+                        }
 
-                            #sleep for a bit if we will loop again
-                            if($PSBoundParameters['Wait']){ Start-Sleep -milliseconds $SleepTimer }
+                        #sleep for a bit if we will loop again
+                        if ($PSBoundParameters['Wait']) { Start-Sleep -milliseconds $SleepTimer }
 
                         #Loop again only if -wait parameter and there are more runspaces to process
-                        } while ($more -and $PSBoundParameters['Wait'])
+                    } while ($more -and $PSBoundParameters['Wait'])
                 
                     #End of runspace function
-                    }
+                }
 
                 #endregion functions
         
                 #region Init
 
-                    if($PSCmdlet.ParameterSetName -eq 'ScriptFile')
-                    {
-                        $ScriptBlock = [scriptblock]::Create( $(Get-Content $ScriptFile | out-string) )
+                if ($PSCmdlet.ParameterSetName -eq 'ScriptFile') {
+                    $ScriptBlock = [scriptblock]::Create( $(Get-Content $ScriptFile | out-string) )
+                }
+                elseif ($PSCmdlet.ParameterSetName -eq 'ScriptBlock') {
+                    #Start building parameter names for the param block
+                    [string[]]$ParamsToAdd = '$_'
+                    if ( $PSBoundParameters.ContainsKey('Parameter') ) {
+                        $ParamsToAdd += '$Parameter'
                     }
-                    elseif($PSCmdlet.ParameterSetName -eq 'ScriptBlock')
-                    {
-                        #Start building parameter names for the param block
-                        [string[]]$ParamsToAdd = '$_'
-                        if( $PSBoundParameters.ContainsKey('Parameter') )
-                        {
-                            $ParamsToAdd += '$Parameter'
-                        }
 
-                        $UsingVariableData = $Null
+                    $UsingVariableData = $Null
                 
 
-                        # This code enables $Using support through the AST.
-                        # This is entirely from  Boe Prox, and his https://github.com/proxb/PoshRSJob module; all credit to Boe!
+                    # This code enables $Using support through the AST.
+                    # This is entirely from  Boe Prox, and his https://github.com/proxb/PoshRSJob module; all credit to Boe!
                 
-                        if($PSVersionTable.PSVersion.Major -gt 2)
-                        {
-                            #Extract using references
-                            $UsingVariables = $ScriptBlock.ast.FindAll({$args[0] -is [System.Management.Automation.Language.UsingExpressionAst]},$True)    
+                    if ($PSVersionTable.PSVersion.Major -gt 2) {
+                        #Extract using references
+                        $UsingVariables = $ScriptBlock.ast.FindAll({ $args[0] -is [System.Management.Automation.Language.UsingExpressionAst] }, $True)    
 
-                            If ($UsingVariables)
-                            {
-                                $List = New-Object 'System.Collections.Generic.List`1[System.Management.Automation.Language.VariableExpressionAst]'
-                                ForEach ($Ast in $UsingVariables)
-                                {
-                                    [void]$list.Add($Ast.SubExpression)
-                                }
+                        If ($UsingVariables) {
+                            $List = New-Object 'System.Collections.Generic.List`1[System.Management.Automation.Language.VariableExpressionAst]'
+                            ForEach ($Ast in $UsingVariables) {
+                                [void]$list.Add($Ast.SubExpression)
+                            }
 
-                                $UsingVar = $UsingVariables | Group Parent | ForEach {$_.Group | Select -First 1}
+                            $UsingVar = $UsingVariables | Group Parent | ForEach { $_.Group | Select -First 1 }
         
-                                #Extract the name, value, and create replacements for each
-                                $UsingVariableData = ForEach ($Var in $UsingVar) {
-                                    Try
-                                    {
-                                        $Value = Get-Variable -Name $Var.SubExpression.VariablePath.UserPath -ErrorAction Stop
-                                        $NewName = ('$__using_{0}' -f $Var.SubExpression.VariablePath.UserPath)
-                                        [pscustomobject]@{
-                                            Name = $Var.SubExpression.Extent.Text
-                                            Value = $Value.Value
-                                            NewName = $NewName
-                                            NewVarName = ('__using_{0}' -f $Var.SubExpression.VariablePath.UserPath)
-                                        }
-                                        $ParamsToAdd += $NewName
+                            #Extract the name, value, and create replacements for each
+                            $UsingVariableData = ForEach ($Var in $UsingVar) {
+                                Try {
+                                    $Value = Get-Variable -Name $Var.SubExpression.VariablePath.UserPath -ErrorAction Stop
+                                    $NewName = ('$__using_{0}' -f $Var.SubExpression.VariablePath.UserPath)
+                                    [pscustomobject]@{
+                                        Name       = $Var.SubExpression.Extent.Text
+                                        Value      = $Value.Value
+                                        NewName    = $NewName
+                                        NewVarName = ('__using_{0}' -f $Var.SubExpression.VariablePath.UserPath)
                                     }
-                                    Catch
-                                    {
-                                        Write-Error "$($Var.SubExpression.Extent.Text) is not a valid Using: variable!"
-                                    }
+                                    $ParamsToAdd += $NewName
                                 }
+                                Catch {
+                                    Write-Error "$($Var.SubExpression.Extent.Text) is not a valid Using: variable!"
+                                }
+                            }
     
-                                $NewParams = $UsingVariableData.NewName -join ', '
-                                $Tuple = [Tuple]::Create($list, $NewParams)
-                                $bindingFlags = [Reflection.BindingFlags]"Default,NonPublic,Instance"
-                                $GetWithInputHandlingForInvokeCommandImpl = ($ScriptBlock.ast.gettype().GetMethod('GetWithInputHandlingForInvokeCommandImpl',$bindingFlags))
+                            $NewParams = $UsingVariableData.NewName -join ', '
+                            $Tuple = [Tuple]::Create($list, $NewParams)
+                            $bindingFlags = [Reflection.BindingFlags]"Default,NonPublic,Instance"
+                            $GetWithInputHandlingForInvokeCommandImpl = ($ScriptBlock.ast.gettype().GetMethod('GetWithInputHandlingForInvokeCommandImpl', $bindingFlags))
         
-                                $StringScriptBlock = $GetWithInputHandlingForInvokeCommandImpl.Invoke($ScriptBlock.ast,@($Tuple))
+                            $StringScriptBlock = $GetWithInputHandlingForInvokeCommandImpl.Invoke($ScriptBlock.ast, @($Tuple))
 
-                                $ScriptBlock = [scriptblock]::Create($StringScriptBlock)
+                            $ScriptBlock = [scriptblock]::Create($StringScriptBlock)
 
-                                Write-Verbose $StringScriptBlock
-                            }
+                            Write-Verbose $StringScriptBlock
                         }
+                    }
                 
-                        $ScriptBlock = $ExecutionContext.InvokeCommand.NewScriptBlock("param($($ParamsToAdd -Join ", "))`r`n" + $Scriptblock.ToString())
-                    }
-                    else
-                    {
-                        Throw "Must provide ScriptBlock or ScriptFile"; Break
-                    }
+                    $ScriptBlock = $ExecutionContext.InvokeCommand.NewScriptBlock("param($($ParamsToAdd -Join ", "))`r`n" + $Scriptblock.ToString())
+                }
+                else {
+                    Throw "Must provide ScriptBlock or ScriptFile"; Break
+                }
 
-                    Write-Debug "`$ScriptBlock: $($ScriptBlock | Out-String)"
-                    Write-Verbose "Creating runspace pool and session states"
+                Write-Debug "`$ScriptBlock: $($ScriptBlock | Out-String)"
+                Write-Verbose "Creating runspace pool and session states"
 
-                    #If specified, add variables and modules/snapins to session state
-                    $sessionstate = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-                    if ($ImportVariables)
-                    {
-                        if($UserVariables.count -gt 0)
-                        {
-                            foreach($Variable in $UserVariables)
-                            {
-                                $sessionstate.Variables.Add( (New-Object -TypeName System.Management.Automation.Runspaces.SessionStateVariableEntry -ArgumentList $Variable.Name, $Variable.Value, $null) )
-                            }
+                #If specified, add variables and modules/snapins to session state
+                $sessionstate = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+                if ($ImportVariables) {
+                    if ($UserVariables.count -gt 0) {
+                        foreach ($Variable in $UserVariables) {
+                            $sessionstate.Variables.Add( (New-Object -TypeName System.Management.Automation.Runspaces.SessionStateVariableEntry -ArgumentList $Variable.Name, $Variable.Value, $null) )
                         }
                     }
-                    if ($ImportModules)
-                    {
-                        if($UserModules.count -gt 0)
-                        {
-                            foreach($ModulePath in $UserModules)
-                            {
-                                $sessionstate.ImportPSModule($ModulePath)
-                            }
-                        }
-                        if($UserSnapins.count -gt 0)
-                        {
-                            foreach($PSSnapin in $UserSnapins)
-                            {
-                                [void]$sessionstate.ImportPSSnapIn($PSSnapin, [ref]$null)
-                            }
+                }
+                if ($ImportModules) {
+                    if ($UserModules.count -gt 0) {
+                        foreach ($ModulePath in $UserModules) {
+                            $sessionstate.ImportPSModule($ModulePath)
                         }
                     }
+                    if ($UserSnapins.count -gt 0) {
+                        foreach ($PSSnapin in $UserSnapins) {
+                            [void]$sessionstate.ImportPSSnapIn($PSSnapin, [ref]$null)
+                        }
+                    }
+                }
 
-                    #Create runspace pool
-                    $runspacepool = [runspacefactory]::CreateRunspacePool(1, $Throttle, $sessionstate, $Host)
-                    $runspacepool.Open() 
+                #Create runspace pool
+                $runspacepool = [runspacefactory]::CreateRunspacePool(1, $Throttle, $sessionstate, $Host)
+                $runspacepool.Open() 
 
-                    Write-Verbose "Creating empty collection to hold runspace jobs"
-                    $Script:runspaces = New-Object System.Collections.ArrayList        
+                Write-Verbose "Creating empty collection to hold runspace jobs"
+                $Script:runspaces = New-Object System.Collections.ArrayList        
         
-                    #If inputObject is bound get a total count and set bound to true
-                    $global:__bound = $false
-                    $allObjects = @()
-                    if( $PSBoundParameters.ContainsKey("inputObject") ){
-                        $global:__bound = $true
-                    }
+                #If inputObject is bound get a total count and set bound to true
+                $global:__bound = $false
+                $allObjects = @()
+                if ( $PSBoundParameters.ContainsKey("inputObject") ) {
+                    $global:__bound = $true
+                }
 
-                    #Set up log file if specified
-                    if( $LogFile ){
-                        New-Item -ItemType file -path $logFile -force | Out-Null
+                #Set up log file if specified
+                if ( $LogFile ) {
+                    New-Item -ItemType file -path $logFile -force | Out-Null
                         ("" | Select Date, Action, Runtime, Status, Details | ConvertTo-Csv -NoTypeInformation -Delimiter ";")[0] | Out-File $LogFile
-                    }
+                }
 
-                    #write initial log entry
-                    $log = "" | Select Date, Action, Runtime, Status, Details
-                        $log.Date = Get-Date
-                        $log.Action = "Batch processing started"
-                        $log.Runtime = $null
-                        $log.Status = "Started"
-                        $log.Details = $null
-                        if($logFile) {
+                #write initial log entry
+                $log = "" | Select Date, Action, Runtime, Status, Details
+                $log.Date = Get-Date
+                $log.Action = "Batch processing started"
+                $log.Runtime = $null
+                $log.Status = "Started"
+                $log.Details = $null
+                if ($logFile) {
                             ($log | convertto-csv -Delimiter ";" -NoTypeInformation)[1] | Out-File $LogFile -Append
-                        }
+                }
 
-			        $timedOutTasks = $false
+                $timedOutTasks = $false
 
                 #endregion INIT
             }
@@ -1058,10 +975,10 @@ Function Invoke-Ping
             Process {
 
                 #add piped objects to all objects or set all objects to bound input object parameter
-                if( -not $global:__bound ){
+                if ( -not $global:__bound ) {
                     $allObjects += $inputObject
                 }
-                else{
+                else {
                     $allObjects = $InputObject
                 }
             }
@@ -1069,95 +986,90 @@ Function Invoke-Ping
             End {
         
                 #Use Try/Finally to catch Ctrl+C and clean up.
-                Try
-                {
+                Try {
                     #counts for progress
                     $totalCount = $allObjects.count
                     $script:completedCount = 0
                     $startedCount = 0
 
-                    foreach($object in $allObjects){
+                    foreach ($object in $allObjects) {
         
                         #region add scripts to runspace pool
                     
-                            #Create the powershell instance, set verbose if needed, supply the scriptblock and parameters
-                            $powershell = [powershell]::Create()
+                        #Create the powershell instance, set verbose if needed, supply the scriptblock and parameters
+                        $powershell = [powershell]::Create()
                     
-                            if ($VerbosePreference -eq 'Continue')
-                            {
-                                [void]$PowerShell.AddScript({$VerbosePreference = 'Continue'})
+                        if ($VerbosePreference -eq 'Continue') {
+                            [void]$PowerShell.AddScript({ $VerbosePreference = 'Continue' })
+                        }
+
+                        [void]$PowerShell.AddScript($ScriptBlock).AddArgument($object)
+
+                        if ($parameter) {
+                            [void]$PowerShell.AddArgument($parameter)
+                        }
+
+                        # $Using support from Boe Prox
+                        if ($UsingVariableData) {
+                            Foreach ($UsingVariable in $UsingVariableData) {
+                                Write-Verbose "Adding $($UsingVariable.Name) with value: $($UsingVariable.Value)"
+                                [void]$PowerShell.AddArgument($UsingVariable.Value)
                             }
+                        }
 
-                            [void]$PowerShell.AddScript($ScriptBlock).AddArgument($object)
-
-                            if ($parameter)
-                            {
-                                [void]$PowerShell.AddArgument($parameter)
-                            }
-
-                            # $Using support from Boe Prox
-                            if ($UsingVariableData)
-                            {
-                                Foreach($UsingVariable in $UsingVariableData) {
-                                    Write-Verbose "Adding $($UsingVariable.Name) with value: $($UsingVariable.Value)"
-                                    [void]$PowerShell.AddArgument($UsingVariable.Value)
-                                }
-                            }
-
-                            #Add the runspace into the powershell instance
-                            $powershell.RunspacePool = $runspacepool
+                        #Add the runspace into the powershell instance
+                        $powershell.RunspacePool = $runspacepool
     
-                            #Create a temporary collection for each runspace
-                            $temp = "" | Select-Object PowerShell, StartTime, object, Runspace
-                            $temp.PowerShell = $powershell
-                            $temp.StartTime = Get-Date
-                            $temp.object = $object
+                        #Create a temporary collection for each runspace
+                        $temp = "" | Select-Object PowerShell, StartTime, object, Runspace
+                        $temp.PowerShell = $powershell
+                        $temp.StartTime = Get-Date
+                        $temp.object = $object
     
-                            #Save the handle output when calling BeginInvoke() that will be used later to end the runspace
-                            $temp.Runspace = $powershell.BeginInvoke()
-                            $startedCount++
+                        #Save the handle output when calling BeginInvoke() that will be used later to end the runspace
+                        $temp.Runspace = $powershell.BeginInvoke()
+                        $startedCount++
 
-                            #Add the temp tracking info to $runspaces collection
-                            Write-Verbose ( "Adding {0} to collection at {1}" -f $temp.object, $temp.starttime.tostring() )
-                            $runspaces.Add($temp) | Out-Null
+                        #Add the temp tracking info to $runspaces collection
+                        Write-Verbose ( "Adding {0} to collection at {1}" -f $temp.object, $temp.starttime.tostring() )
+                        $runspaces.Add($temp) | Out-Null
             
-                            #loop through existing runspaces one time
-                            Get-RunspaceData
+                        #loop through existing runspaces one time
+                        Get-RunspaceData
 
-                            #If we have more running than max queue (used to control timeout accuracy)
-                            #Script scope resolves odd PowerShell 2 issue
-                            $firstRun = $true
-                            while ($runspaces.count -ge $Script:MaxQueue) {
+                        #If we have more running than max queue (used to control timeout accuracy)
+                        #Script scope resolves odd PowerShell 2 issue
+                        $firstRun = $true
+                        while ($runspaces.count -ge $Script:MaxQueue) {
 
-                                #give verbose output
-                                if($firstRun){
-                                    Write-Verbose "$($runspaces.count) items running - exceeded $Script:MaxQueue limit."
-                                }
-                                $firstRun = $false
-                    
-                                #run get-runspace data and sleep for a short while
-                                Get-RunspaceData
-                                Start-Sleep -Milliseconds $sleepTimer
-                    
+                            #give verbose output
+                            if ($firstRun) {
+                                Write-Verbose "$($runspaces.count) items running - exceeded $Script:MaxQueue limit."
                             }
+                            $firstRun = $false
+                    
+                            #run get-runspace data and sleep for a short while
+                            Get-RunspaceData
+                            Start-Sleep -Milliseconds $sleepTimer
+                    
+                        }
 
                         #endregion add scripts to runspace pool
                     }
                      
-                    Write-Verbose ( "Finish processing the remaining runspace jobs: {0}" -f ( @($runspaces | Where {$_.Runspace -ne $Null}).Count) )
+                    Write-Verbose ( "Finish processing the remaining runspace jobs: {0}" -f ( @($runspaces | Where { $_.Runspace -ne $Null }).Count) )
                     Get-RunspaceData -wait
 
                     if (-not $quiet) {
-			            Write-Progress -Activity "Running Query" -Status "Starting threads" -Completed
-		            }
+                        Write-Progress -Activity "Running Query" -Status "Starting threads" -Completed
+                    }
 
                 }
-                Finally
-                {
+                Finally {
                     #Close the runspace pool, unless we specified no close on timeout and something timed out
                     if ( ($timedOutTasks -eq $false) -or ( ($timedOutTasks -eq $true) -and ($noCloseOnTimeout -eq $false) ) ) {
-	                    Write-Verbose "Closing the runspace pool"
-			            $runspacepool.close()
+                        Write-Verbose "Closing the runspace pool"
+                        $runspacepool.close()
                     }
 
                     #collect garbage
@@ -1169,42 +1081,35 @@ Function Invoke-Ping
         Write-Verbose "PSBoundParameters = $($PSBoundParameters | Out-String)"
         
         $bound = $PSBoundParameters.keys -contains "ComputerName"
-        if(-not $bound)
-        {
+        if (-not $bound) {
             [System.Collections.ArrayList]$AllComputers = @()
         }
     }
-    Process
-    {
+    Process {
 
         #Handle both pipeline and bound parameter.  We don't want to stream objects, defeats purpose of parallelizing work
-        if($bound)
-        {
+        if ($bound) {
             $AllComputers = $ComputerName
         }
-        Else
-        {
-            foreach($Computer in $ComputerName)
-            {
+        Else {
+            foreach ($Computer in $ComputerName) {
                 $AllComputers.add($Computer) | Out-Null
             }
         }
 
     }
-    End
-    {
+    End {
 
         #Built up the parameters and run everything in parallel
         $params = @($Detail, $Quiet)
         $splat = @{
-            Throttle = $Throttle
+            Throttle        = $Throttle
             RunspaceTimeout = $Timeout
-            InputObject = $AllComputers
-            parameter = $params
+            InputObject     = $AllComputers
+            parameter       = $params
         }
-        if($NoCloseOnTimeout)
-        {
-            $splat.add('NoCloseOnTimeout',$True)
+        if ($NoCloseOnTimeout) {
+            $splat.add('NoCloseOnTimeout', $True)
         }
 
         Invoke-Parallel @splat -ScriptBlock {
@@ -1214,310 +1119,266 @@ Function Invoke-Ping
             $quiet = $parameter[1]
 
             #They want detail, define and run test-server
-            if($detail)
-            {
-                Try
-                {
+            if ($detail) {
+                Try {
                     #Modification of jrich's Test-Server function: https://gallery.technet.microsoft.com/scriptcenter/Powershell-Test-Server-e0cdea9a
-                    Function Test-Server{
+                    Function Test-Server {
                         [cmdletBinding()]
                         param(
-	                        [parameter(
-                                Mandatory=$true,
-                                ValueFromPipeline=$true)]
-	                        [string[]]$ComputerName,
+                            [parameter(
+                                Mandatory = $true,
+                                ValueFromPipeline = $true)]
+                            [string[]]$ComputerName,
                             [switch]$All,
-                            [parameter(Mandatory=$false)]
-	                        [switch]$CredSSP,
+                            [parameter(Mandatory = $false)]
+                            [switch]$CredSSP,
                             [switch]$RemoteReg,
                             [switch]$RDP,
                             [switch]$RPC,
                             [switch]$SMB,
                             [switch]$WSMAN,
                             [switch]$IPV6,
-	                        [Management.Automation.PSCredential]$Credential
+                            [Management.Automation.PSCredential]$Credential
                         )
-                            begin
-                            {
-	                            $total = Get-Date
-	                            $results = @()
-	                            if($credssp -and -not $Credential)
-                                {
-                                    Throw "Must supply Credentials with CredSSP test"
-                                }
-
-                                [string[]]$props = write-output Name, IP, Domain, Ping, WSMAN, CredSSP, RemoteReg, RPC, RDP, SMB
-
-                                #Hash table to create PSObjects later, compatible with ps2...
-                                $Hash = @{}
-                                foreach($prop in $props)
-                                {
-                                    $Hash.Add($prop,$null)
-                                }
-
-                                function Test-Port{
-                                    [cmdletbinding()]
-                                    Param(
-                                        [string]$srv,
-                                        $port=135,
-                                        $timeout=3000
-                                    )
-                                    $ErrorActionPreference = "SilentlyContinue"
-                                    $tcpclient = new-Object system.Net.Sockets.TcpClient
-                                    $iar = $tcpclient.BeginConnect($srv,$port,$null,$null)
-                                    $wait = $iar.AsyncWaitHandle.WaitOne($timeout,$false)
-                                    if(-not $wait)
-                                    {
-                                        $tcpclient.Close()
-                                        Write-Verbose "Connection Timeout to $srv`:$port"
-                                        $false
-                                    }
-                                    else
-                                    {
-                                        Try
-                                        {
-                                            $tcpclient.EndConnect($iar) | out-Null
-                                            $true
-                                        }
-                                        Catch
-                                        {
-                                            write-verbose "Error for $srv`:$port`: $_"
-                                            $false
-                                        }
-                                        $tcpclient.Close()
-                                    }
-                                }
+                        begin {
+                            $total = Get-Date
+                            $results = @()
+                            if ($credssp -and -not $Credential) {
+                                Throw "Must supply Credentials with CredSSP test"
                             }
 
-                            process
-                            {
-                                foreach($name in $computername)
-                                {
-	                                $dt = $cdt= Get-Date
-	                                Write-verbose "Testing: $Name"
-	                                $failed = 0
-	                                try{
-	                                    $DNSEntity = [Net.Dns]::GetHostEntry($name)
-	                                    $domain = ($DNSEntity.hostname).replace("$name.","")
-	                                    $ips = $DNSEntity.AddressList | %{
-                                            if(-not ( -not $IPV6 -and $_.AddressFamily -like "InterNetworkV6" ))
-                                            {
-                                                $_.IPAddressToString
+                            [string[]]$props = write-output Name, IP, Domain, Ping, WSMAN, CredSSP, RemoteReg, RPC, RDP, SMB
+
+                            #Hash table to create PSObjects later, compatible with ps2...
+                            $Hash = @{}
+                            foreach ($prop in $props) {
+                                $Hash.Add($prop, $null)
+                            }
+
+                            function Test-Port {
+                                [cmdletbinding()]
+                                Param(
+                                    [string]$srv,
+                                    $port = 135,
+                                    $timeout = 3000
+                                )
+                                $ErrorActionPreference = "SilentlyContinue"
+                                $tcpclient = new-Object system.Net.Sockets.TcpClient
+                                $iar = $tcpclient.BeginConnect($srv, $port, $null, $null)
+                                $wait = $iar.AsyncWaitHandle.WaitOne($timeout, $false)
+                                if (-not $wait) {
+                                    $tcpclient.Close()
+                                    Write-Verbose "Connection Timeout to $srv`:$port"
+                                    $false
+                                }
+                                else {
+                                    Try {
+                                        $tcpclient.EndConnect($iar) | out-Null
+                                        $true
+                                    }
+                                    Catch {
+                                        write-verbose "Error for $srv`:$port`: $_"
+                                        $false
+                                    }
+                                    $tcpclient.Close()
+                                }
+                            }
+                        }
+
+                        process {
+                            foreach ($name in $computername) {
+                                $dt = $cdt = Get-Date
+                                Write-verbose "Testing: $Name"
+                                $failed = 0
+                                try {
+                                    $DNSEntity = [Net.Dns]::GetHostEntry($name)
+                                    $domain = ($DNSEntity.hostname).replace("$name.", "")
+                                    $ips = $DNSEntity.AddressList | % {
+                                        if (-not ( -not $IPV6 -and $_.AddressFamily -like "InterNetworkV6" )) {
+                                            $_.IPAddressToString
+                                        }
+                                    }
+                                }
+                                catch {
+                                    $rst = New-Object -TypeName PSObject -Property $Hash | Select -Property $props
+                                    $rst.name = $name
+                                    $results += $rst
+                                    $failed = 1
+                                }
+                                Write-verbose "DNS:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
+                                if ($failed -eq 0) {
+                                    foreach ($ip in $ips) {
+	    
+                                        $rst = New-Object -TypeName PSObject -Property $Hash | Select -Property $props
+                                        $rst.name = $name
+                                        $rst.ip = $ip
+                                        $rst.domain = $domain
+		            
+                                        if ($RDP -or $All) {
+                                            ####RDP Check (firewall may block rest so do before ping
+                                            try {
+                                                $socket = New-Object Net.Sockets.TcpClient($name, 3389) -ErrorAction stop
+                                                if ($socket -eq $null) {
+                                                    $rst.RDP = $false
+                                                }
+                                                else {
+                                                    $rst.RDP = $true
+                                                    $socket.close()
+                                                }
+                                            }
+                                            catch {
+                                                $rst.RDP = $false
+                                                Write-Verbose "Error testing RDP: $_"
                                             }
                                         }
-	                                }
-	                                catch
-	                                {
-		                                $rst = New-Object -TypeName PSObject -Property $Hash | Select -Property $props
-		                                $rst.name = $name
-		                                $results += $rst
-		                                $failed = 1
-	                                }
-	                                Write-verbose "DNS:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
-	                                if($failed -eq 0){
-	                                    foreach($ip in $ips)
-	                                    {
-	    
-		                                    $rst = New-Object -TypeName PSObject -Property $Hash | Select -Property $props
-	                                        $rst.name = $name
-		                                    $rst.ip = $ip
-		                                    $rst.domain = $domain
-		            
-                                            if($RDP -or $All)
-                                            {
-                                                ####RDP Check (firewall may block rest so do before ping
-		                                        try{
-                                                    $socket = New-Object Net.Sockets.TcpClient($name, 3389) -ErrorAction stop
-		                                            if($socket -eq $null)
-		                                            {
-			                                            $rst.RDP = $false
-		                                            }
-		                                            else
-		                                            {
-			                                            $rst.RDP = $true
-			                                            $socket.close()
-		                                            }
-                                                }
-                                                catch
-                                                {
-                                                    $rst.RDP = $false
-                                                    Write-Verbose "Error testing RDP: $_"
-                                                }
-                                            }
-		                                Write-verbose "RDP:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
+                                        Write-verbose "RDP:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
                                         #########ping
-	                                    if(test-connection $ip -count 2 -Quiet)
-	                                    {
-	                                        Write-verbose "PING:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
-			                                $rst.ping = $true
+                                        if (test-connection $ip -count 2 -Quiet) {
+                                            Write-verbose "PING:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
+                                            $rst.ping = $true
 			    
-                                            if($WSMAN -or $All)
-                                            {
-                                                try{############wsman
-				                                    Test-WSMan $ip -ErrorAction stop | Out-Null
-				                                    $rst.WSMAN = $true
-				                                }
-			                                    catch
-				                                {
+                                            if ($WSMAN -or $All) {
+                                                try {
+                                                    ############wsman
+                                                    Test-WSMan $ip -ErrorAction stop | Out-Null
+                                                    $rst.WSMAN = $true
+                                                }
+                                                catch {
                                                     $rst.WSMAN = $false
                                                     Write-Verbose "Error testing WSMAN: $_"
                                                 }
-				                                Write-verbose "WSMAN:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
-			                                    if($rst.WSMAN -and $credssp) ########### credssp
-			                                    {
-				                                    try{
-					                                    Test-WSMan $ip -Authentication Credssp -Credential $cred -ErrorAction stop
-					                                    $rst.CredSSP = $true
-					                                }
-				                                    catch
-					                                {
+                                                Write-verbose "WSMAN:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
+                                                if ($rst.WSMAN -and $credssp) { ########### credssp
+                                                    try {
+                                                        Test-WSMan $ip -Authentication Credssp -Credential $cred -ErrorAction stop
+                                                        $rst.CredSSP = $true
+                                                    }
+                                                    catch {
                                                         $rst.CredSSP = $false
                                                         Write-Verbose "Error testing CredSSP: $_"
                                                     }
-				                                    Write-verbose "CredSSP:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
-			                                    }
+                                                    Write-verbose "CredSSP:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
+                                                }
                                             }
-                                            if($RemoteReg -or $All)
-                                            {
-			                                    try ########remote reg
-			                                    {
-				                                    [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $ip) | Out-Null
-				                                    $rst.remotereg = $true
-			                                    }
-			                                    catch
-				                                {
+                                            if ($RemoteReg -or $All) {
+                                                try { ########remote reg
+                                                    [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $ip) | Out-Null
+                                                    $rst.remotereg = $true
+                                                }
+                                                catch {
                                                     $rst.remotereg = $false
                                                     Write-Verbose "Error testing RemoteRegistry: $_"
                                                 }
-			                                    Write-verbose "remote reg:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
+                                                Write-verbose "remote reg:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
                                             }
-                                            if($RPC -or $All)
-                                            {
-			                                    try ######### wmi
-			                                    {	
-				                                    $w = [wmi] ''
-				                                    $w.psbase.options.timeout = 15000000
-				                                    $w.path = "\\$Name\root\cimv2:Win32_ComputerSystem.Name='$Name'"
-				                                    $w | select none | Out-Null
-				                                    $rst.RPC = $true
-			                                    }
-			                                    catch
-				                                {
+                                            if ($RPC -or $All) {
+                                                try { ######### wmi	
+                                                    $w = [wmi] ''
+                                                    $w.psbase.options.timeout = 15000000
+                                                    $w.path = "\\$Name\root\cimv2:Win32_ComputerSystem.Name='$Name'"
+                                                    $w | select none | Out-Null
+                                                    $rst.RPC = $true
+                                                }
+                                                catch {
                                                     $rst.rpc = $false
                                                     Write-Verbose "Error testing WMI/RPC: $_"
                                                 }
-			                                    Write-verbose "WMI/RPC:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
+                                                Write-verbose "WMI/RPC:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
                                             }
-                                            if($SMB -or $All)
-                                            {
+                                            if ($SMB -or $All) {
 
                                                 #Use set location and resulting errors.  push and pop current location
-                    	                        try ######### C$
-			                                    {	
+                                                try { ######### C$	
                                                     $path = "\\$name\c$"
-				                                    Push-Location -Path $path -ErrorAction stop
-				                                    $rst.SMB = $true
+                                                    Push-Location -Path $path -ErrorAction stop
+                                                    $rst.SMB = $true
                                                     Pop-Location
-			                                    }
-			                                    catch
-				                                {
+                                                }
+                                                catch {
                                                     $rst.SMB = $false
                                                     Write-Verbose "Error testing SMB: $_"
                                                 }
-			                                    Write-verbose "SMB:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
+                                                Write-verbose "SMB:  $((New-TimeSpan $dt ($dt = get-date)).totalseconds)"
 
                                             }
-	                                    }
-		                                else
-		                                {
-			                                $rst.ping = $false
-			                                $rst.wsman = $false
-			                                $rst.credssp = $false
-			                                $rst.remotereg = $false
-			                                $rst.rpc = $false
+                                        }
+                                        else {
+                                            $rst.ping = $false
+                                            $rst.wsman = $false
+                                            $rst.credssp = $false
+                                            $rst.remotereg = $false
+                                            $rst.rpc = $false
                                             $rst.smb = $false
-		                                }
-		                                $results += $rst	
-	                                }
+                                        }
+                                        $results += $rst	
+                                    }
                                 }
-	                            Write-Verbose "Time for $($Name): $((New-TimeSpan $cdt ($dt)).totalseconds)"
-	                            Write-Verbose "----------------------------"
-                                }
-                            }
-                            end
-                            {
-	                            Write-Verbose "Time for all: $((New-TimeSpan $total ($dt)).totalseconds)"
-	                            Write-Verbose "----------------------------"
-                                return $results
+                                Write-Verbose "Time for $($Name): $((New-TimeSpan $cdt ($dt)).totalseconds)"
+                                Write-Verbose "----------------------------"
                             }
                         }
+                        end {
+                            Write-Verbose "Time for all: $((New-TimeSpan $total ($dt)).totalseconds)"
+                            Write-Verbose "----------------------------"
+                            return $results
+                        }
+                    }
                     
                     #Build up parameters for Test-Server and run it
-                        $TestServerParams = @{
-                            ComputerName = $Computer
-                            ErrorAction = "Stop"
-                        }
+                    $TestServerParams = @{
+                        ComputerName = $Computer
+                        ErrorAction  = "Stop"
+                    }
 
-                        if($detail -eq "*"){
-                            $detail = "WSMan","RemoteReg","RPC","RDP","SMB" 
-                        }
+                    if ($detail -eq "*") {
+                        $detail = "WSMan", "RemoteReg", "RPC", "RDP", "SMB" 
+                    }
 
-                        $detail | Select -Unique | Foreach-Object { $TestServerParams.add($_,$True) }
-                        Test-Server @TestServerParams | Select -Property $( "Name", "IP", "Domain", "Ping" + $detail )
+                    $detail | Select -Unique | Foreach-Object { $TestServerParams.add($_, $True) }
+                    Test-Server @TestServerParams | Select -Property $( "Name", "IP", "Domain", "Ping" + $detail )
                 }
-                Catch
-                {
+                Catch {
                     Write-Warning "Error with Test-Server: $_"
                 }
             }
             #We just want ping output
-            else
-            {
-                Try
-                {
+            else {
+                Try {
                     #Pick out a few properties, add a status label.  If quiet output, just return the address
                     $result = $null
-                    if( $result = @( Test-Connection -ComputerName $computer -Count 2 -erroraction Stop ) )
-                    {
+                    if ( $result = @( Test-Connection -ComputerName $computer -Count 2 -erroraction Stop ) ) {
                         $Output = $result | Select -first 1 -Property Address,
-                                                                      IPV4Address,
-                                                                      IPV6Address,
-                                                                      ResponseTime,
-                                                                      @{ label = "STATUS"; expression = {"Responding"} }
+                        IPV4Address,
+                        IPV6Address,
+                        ResponseTime,
+                        @{ label = "STATUS"; expression = { "Responding" } }
 
-                        if( $quiet )
-                        {
+                        if ( $quiet ) {
                             $Output.address
                         }
-                        else
-                        {
+                        else {
                             $Output
                         }
                     }
                 }
-                Catch
-                {
-                    if(-not $quiet)
-                    {
+                Catch {
+                    if (-not $quiet) {
                         #Ping failed.  I'm likely making inappropriate assumptions here, let me know if this is the case : )
-                        if($_ -match "No such host is known")
-                        {
+                        if ($_ -match "No such host is known") {
                             $status = "Unknown host"
                         }
-                        elseif($_ -match "Error due to lack of resources")
-                        {
+                        elseif ($_ -match "Error due to lack of resources") {
                             $status = "No Response"
                         }
-                        else
-                        {
+                        else {
                             $status = "Error: $_"
                         }
 
-                        "" | Select -Property @{ label = "Address"; expression = {$computer} },
-                                              IPV4Address,
-                                              IPV6Address,
-                                              ResponseTime,
-                                              @{ label = "STATUS"; expression = {$status} }
+                        "" | Select -Property @{ label = "Address"; expression = { $computer } },
+                        IPV4Address,
+                        IPV6Address,
+                        ResponseTime,
+                        @{ label = "STATUS"; expression = { $status } }
                     }
                 }
             }
@@ -1551,14 +1412,17 @@ function ConvertTo-Hashtable {
  
             ## Return the array but don't enumerate it because the object may be pretty complex
             Write-Output -NoEnumerate $collection
-        } elseif ($InputObject -is [psobject]) { ## If the object has properties that need enumeration
+        }
+        elseif ($InputObject -is [psobject]) {
+            ## If the object has properties that need enumeration
             ## Convert it to its own hash table and return it
             $hash = @{}
             foreach ($property in $InputObject.PSObject.Properties) {
                 $hash[$property.Name] = ConvertTo-Hashtable -InputObject $property.Value
             }
             $hash
-        } else {
+        }
+        else {
             ## If the object isn't an array, collection, or other object, it's already a hash table
             ## So just return it.
             $InputObject
@@ -1567,7 +1431,7 @@ function ConvertTo-Hashtable {
 }
 
 #Start the node backend automatically, restarts it if already running
-Get-Process | where {$_.name -like "app"} | Stop-Process
+Get-Process | where { $_.name -like "app" } | Stop-Process
 cd "$PSScriptRoot/api"
 Start-Process -FilePath "$PSScriptRoot/api/app.exe"
 
